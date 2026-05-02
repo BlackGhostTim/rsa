@@ -5,29 +5,31 @@ import com.ricedotwho.rsm.data.TerminalType;
 import com.ricedotwho.rsm.module.api.Category;
 import com.ricedotwho.rsm.module.api.ModuleInfo;
 import com.ricedotwho.rsm.module.impl.dungeon.boss.p3.terminal.types.Term;
-import com.ricedotwho.rsm.ui.clickgui.settings.Setting;
 import com.ricedotwho.rsm.ui.clickgui.settings.impl.BooleanSetting;
+import lombok.Getter;
+
 import java.math.BigDecimal;
 
+@Getter
 @ModuleInfo(aliases = "Terminal Solver", id = "TerminalSolver", category = Category.DUNGEONS, isOverwrite = true)
 public class TerminalSolver extends com.ricedotwho.rsm.module.impl.dungeon.boss.p3.terminal.TerminalSolver {
-   private static final BooleanSetting anyRubix = new BooleanSetting("Any Click Rubix", false);
-   private final BooleanSetting offTickSlots = new BooleanSetting("Off Tick Slots", false);
 
-   public TerminalSolver() {
-      this.registerProperty(new Setting[]{anyRubix, this.offTickSlots});
-      getClickDelay().setMin(BigDecimal.ZERO);
-   }
+    @Getter private static final BooleanSetting anyRubix = new BooleanSetting("Any Click Rubix", false);
+    private final BooleanSetting offTickSlots = new BooleanSetting("Off Tick Slots", false);
 
-   public Term create(TerminalType type, String title) {
-      return (Term)(type == TerminalType.RUBIX ? new Rubix(title) : type.create(title));
-   }
+    public TerminalSolver() {
+        super();
+        this.registerProperty(
+                anyRubix,
+                offTickSlots
+        );
 
-   public BooleanSetting getOffTickSlots() {
-      return this.offTickSlots;
-   }
+        getClickDelay().setMin(BigDecimal.ZERO);
+    }
 
-   public static BooleanSetting getAnyRubix() {
-      return anyRubix;
-   }
+    @Override
+    public Term create(TerminalType type, String title) {
+        if (type == TerminalType.RUBIX) return new Rubix(title);
+        return type.create(title);
+    }
 }

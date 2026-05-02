@@ -9,50 +9,49 @@ import com.ricedotwho.rsa.module.impl.dungeon.boss.p3.autop3.subactions.SubActio
 import com.ricedotwho.rsm.data.Colour;
 import com.ricedotwho.rsm.data.MutableInput;
 import com.ricedotwho.rsm.data.Pos;
+import net.minecraft.world.entity.player.Input;
+
 import java.util.Map;
-import net.minecraft.util.PlayerInput;
 
 public class LeapRing extends Ring {
-   public LeapRing(Pos min, Pos max, ArgumentManager manager, SubActionManager actions) {
-      super(min, max, RingType.LEAP.getRenderSizeOffset(), manager, actions);
-   }
 
-   public LeapRing(Pos min, Pos max, ArgumentManager manager, SubActionManager actions, Map<String, Object> ignored) {
-      super(min, max, RingType.LEAP.getRenderSizeOffset(), manager, actions);
-   }
+    public LeapRing(Pos min, Pos max, ArgumentManager manager, SubActionManager actions) {
+        super(min, max, RingType.LEAP.getRenderSizeOffset(), manager, actions);
+    }
 
-   @Override
-   public RingType getType() {
-      return RingType.LEAP;
-   }
+    public LeapRing(Pos min, Pos max, ArgumentManager manager, SubActionManager actions, Map<String, Object> ignored) {
+        super(min, max, RingType.LEAP.getRenderSizeOffset(), manager, actions);
+    }
 
-   @Override
-   public boolean run() {
-      if (!SwapManager.reserveSwap("SPIRIT_LEAP", "INFINITE_SPIRIT_LEAP")) {
-         return false;
-      } else {
-         FastLeap.doAutoLeap();
-         return true;
-      }
-   }
+    @Override
+    public RingType getType() {
+        return RingType.LEAP;
+    }
 
-   @Override
-   public Colour getColour() {
-      return Colour.PINK;
-   }
+    @Override
+    public boolean run() {
+        if (!SwapManager.reserveSwap("SPIRIT_LEAP", "INFINITE_SPIRIT_LEAP")) return false;
+        FastLeap.doAutoLeap();
+        return true;
+    }
 
-   @Override
-   public int getPriority() {
-      return 60;
-   }
+    @Override
+    public Colour getColour() {
+        return AutoP3.getLeap().getValue();
+    }
 
-   @Override
-   public boolean tick(MutableInput mutableInput, PlayerInput input, AutoP3 autoP3) {
-      return true;
-   }
+    @Override
+    public int getPriority() {
+        return 60;
+    }
 
-   @Override
-   public void feedback() {
-      AutoP3.modMessage("Leaping");
-   }
+    @Override
+    public boolean tick(MutableInput mutableInput, Input input, AutoP3 autoP3) {
+        return true;
+    }
+
+    @Override
+    public void feedback() {
+        AutoP3.modMessage("Leaping");
+    }
 }

@@ -5,17 +5,18 @@ import com.ricedotwho.rsa.module.impl.dungeon.boss.p3.autop3.subactions.SubActio
 import com.ricedotwho.rsa.module.impl.dungeon.boss.p3.autop3.subactions.SubActionType;
 
 public class StopAction extends SubAction {
-   public StopAction() {
-      super(SubActionType.STOP);
-   }
 
-   @Override
-   public boolean execute() {
-      return true;
-   }
+    public StopAction() {
+        super(SubActionType.STOP);
+    }
 
-   @Override
-   public void serialize(JsonObject obj) {
-      obj.addProperty(this.getType().name(), true);
-   }
+    @Override
+    public boolean execute() {
+        return true;
+    }
+
+    @Override
+    public void serialize(JsonObject obj) {
+        obj.addProperty(this.getType().name(), true);
+    }
 }

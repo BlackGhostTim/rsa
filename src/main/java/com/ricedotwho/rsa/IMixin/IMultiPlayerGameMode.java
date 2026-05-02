@@ -1,10 +1,9 @@
 package com.ricedotwho.rsa.IMixin;
 
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.client.network.SequencedPacketCreator;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.multiplayer.prediction.PredictiveAction;
 
 public interface IMultiPlayerGameMode {
-   void sendPacketSequenced(ClientWorld world, SequencedPacketCreator packetCreator);
-
-   void syncSlot();
+    void sendPacketSequenced(ClientLevel world, PredictiveAction packetCreator);
+    void syncSlot();
 }

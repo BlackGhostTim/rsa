@@ -6,152 +6,125 @@ import com.ricedotwho.rsm.component.impl.map.utils.RoomUtils;
 import com.ricedotwho.rsm.data.Colour;
 import com.ricedotwho.rsm.data.Pos;
 import com.ricedotwho.rsm.utils.FileUtils;
+import lombok.Getter;
+import lombok.Setter;
 
 public abstract class Node {
-   protected final Pos localPos;
-   private final float radius;
-   private final AwaitManager awaitManager;
-   private final boolean start;
-   private boolean triggered;
-   private int lastTickTime;
-   protected transient Pos realPos;
+    protected final Pos localPos;
+    @Getter
+    private final float radius;
+    @Getter
+    private final AwaitManager awaitManager;
+    @Getter
+    private final boolean start;
+    @Getter
+    @Setter
+    private boolean triggered;
+    @Getter
+    private int lastTickTime;
 
-   public Node(Pos localPos) {
-      this(localPos, null);
-   }
+    @Getter
+    protected transient Pos realPos;
 
-   public Node(Pos localPos, AwaitManager awaitManager) {
-      this(localPos, awaitManager, 0.5F, false);
-   }
+    public Node(Pos localPos) {
+        this(localPos, null);
+    }
 
-   public Node(Pos localPos, AwaitManager awaitManager, boolean start) {
-      this(localPos, awaitManager, 0.5F, start);
-   }
+    public Node(Pos localPos, AwaitManager awaitManager) {
+        this(localPos, awaitManager, 0.5f, false);
+    }
 
-   public Node(Pos localPos, AwaitManager awaitManager, float radius, boolean start) {
-      this.localPos = localPos;
-      this.radius = radius;
-      this.awaitManager = awaitManager;
-      this.start = start;
-      this.triggered = false;
-      this.lastTickTime = -1;
-   }
+    public Node(Pos localPos, AwaitManager awaitManager, boolean start) {
+        this(localPos, awaitManager, 0.5f, start);
+    }
 
-   public boolean hasAwaits() {
-      return this.awaitManager != null && this.awaitManager.hasAwaits();
-   }
+    public Node(Pos localPos, AwaitManager awaitManager, float r, boolean start) {
+        this.localPos = localPos;
+        this.radius = r;
+        this.awaitManager = awaitManager;
+        this.start = start;
 
-   public boolean shouldAwait() {
-      return this.awaitManager != null && this.awaitManager.shouldAwait(this);
-   }
+        this.triggered = false;
+        this.lastTickTime = -1;
+    }
 
-   public void calculate(UniqueRoom room) {
-      this.realPos = RoomUtils.getRealPosition(this.localPos, room.getMainRoom());
-      if (this.hasAwaits()) {
-         this.getAwaitManager().resetAwaits();
-      }
-   }
+    public boolean hasAwaits() {
+        return this.awaitManager != null && this.awaitManager.hasAwaits();
+    }
 
-   public abstract boolean run(Pos playerPos);
+    public boolean shouldAwait() {
+        return this.awaitManager != null && this.awaitManager.shouldAwait(this);
+    }
 
-   public abstract void render(boolean depth);
+    public void calculate(UniqueRoom room) {
+        this.realPos = RoomUtils.getRealPosition(this.localPos, room.getMainRoom());
+        if (this.hasAwaits()) this.getAwaitManager().resetAwaits();
+    }
 
-   protected boolean cancel() {
-      this.reset();
-      return false;
-   }
+    public abstract boolean run(Pos playerPos);
+    public abstract void render(boolean depth);
 
-   public int getPriority() {
-      return 8;
-   }
+    protected boolean cancel() {
+        this.reset();
+        return false;
+    }
 
-   public boolean isInNode(Pos playerPos) {
-      if (!AutoRoutes.getCenterOnly().getValue()) {
-         return playerPos.squaredDistanceTo(this.realPos) <= this.radius * this.radius;
-      }
+    public int getPriority() {
+        return 8;
+    }
 
-      return this.realPos.x() == playerPos.x()
-         && playerPos.y() >= this.realPos.y() - 0.05
-         && playerPos.y() <= this.realPos.y() + 0.05
-         && this.realPos.z() == playerPos.z();
-   }
+    public boolean isInNode(Pos playerPos) {
+        if (AutoRoutes.getCenterOnly().getValue()) {
+            return this.realPos.x() == playerPos.x()
+                    && playerPos.y() >= this.realPos.y() - 0.05 && playerPos.y() <= this.realPos.y() + 0.05
+                    && this.realPos.z() == playerPos.z();
+        }
+        return playerPos.squaredDistanceTo(this.realPos) <= radius * radius;
+    }
 
-   public void updateLastTickTime(int lastTickTime) {
-      this.lastTickTime = lastTickTime;
-   }
+    public void updateLastTickTime(int lastTickTime) {
+        this.lastTickTime = lastTickTime;
+    }
 
-   public boolean hasRanThisTick(int tickTime) {
-      return tickTime <= this.lastTickTime;
-   }
+    public boolean hasRanThisTick(int tickTime) {
+        return (tickTime <= lastTickTime);
+    }
 
-   public void preTrigger(int tickTime) {
-      this.lastTickTime = tickTime;
-      this.triggered = true;
-   }
+    public void preTrigger(int tickTime) {
+        this.lastTickTime = tickTime;
+        this.triggered = true;
+    }
 
-   public boolean updateNodeState(Pos playerPos, int tickTime) {
-      if (tickTime <= this.lastTickTime) {
-         return false;
-      }
+    public boolean updateNodeState(Pos playerPos, int tickTime) {
+        if (tickTime <= lastTickTime) return false; // Don't go do the same node twice in 1 tick, also blocks from setting it to untriggered
+        boolean bl = isInNode(playerPos);
+        if (bl && !this.triggered) {
+            // Trigger will be set later
+            return true;
+        }
 
-      boolean inNode = this.isInNode(playerPos);
-      if (inNode && !this.triggered) {
-         return true;
-      }
+        if (!bl && this.triggered) {
+            reset();
+        }
+        return false;
+    }
 
-      if (!inNode && this.triggered) {
-         this.reset();
-      }
+    public abstract String getName();
 
-      return false;
-   }
+    public abstract Colour getColour();
 
-   public abstract String getName();
+    public JsonObject serialize() {
+        JsonObject json = new JsonObject();
+        json.addProperty("type", this.getName());
+        json.add("localPos", FileUtils.getGson().toJsonTree(localPos));
+        json.addProperty("radius", radius);
+        json.addProperty("start", start);
+        if (this.awaitManager == null || !this.awaitManager.hasAwaits()) return json;
+        json.add("awaits", this.awaitManager.serialize());
+        return json;
+    }
 
-   public abstract Colour getColour();
-
-   public JsonObject serialize() {
-      JsonObject json = new JsonObject();
-      json.addProperty("type", this.getName());
-      json.add("localPos", FileUtils.getGson().toJsonTree(this.localPos));
-      json.addProperty("radius", this.radius);
-      json.addProperty("start", this.start);
-      if (this.awaitManager != null && this.awaitManager.hasAwaits()) {
-         json.add("awaits", this.awaitManager.serialize());
-      }
-
-      return json;
-   }
-
-   public void reset() {
-      this.triggered = false;
-   }
-
-   public float getRadius() {
-      return this.radius;
-   }
-
-   public AwaitManager getAwaitManager() {
-      return this.awaitManager;
-   }
-
-   public boolean isStart() {
-      return this.start;
-   }
-
-   public boolean isTriggered() {
-      return this.triggered;
-   }
-
-   public void setTriggered(boolean triggered) {
-      this.triggered = triggered;
-   }
-
-   public int getLastTickTime() {
-      return this.lastTickTime;
-   }
-
-   public Pos getRealPos() {
-      return this.realPos;
-   }
+    public void reset() {
+        this.triggered = false;
+    }
 }

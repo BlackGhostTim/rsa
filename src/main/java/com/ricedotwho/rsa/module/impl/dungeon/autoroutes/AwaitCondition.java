@@ -1,29 +1,19 @@
 package com.ricedotwho.rsa.module.impl.dungeon.autoroutes;
 
 import com.google.gson.JsonObject;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 
+@AllArgsConstructor
 public abstract class AwaitCondition<T> {
-   private final AwaitType type;
+    @Getter
+    private final AwaitType type;
 
-   // Polled while the node is active to determine whether this await has completed.
-   public abstract boolean test(Node node);
+    public abstract boolean test(Node node);
+    protected abstract void consume(T event);
 
-   // Receives external progress signals (e.g. clicks/secrets) from packet/input hooks.
-   protected abstract void consume(T value);
+    public abstract void onEnter();
+    public abstract void reset();
+    public abstract void serialize(JsonObject json);
 
-   // Called once when entering a node that owns this await.
-   public abstract void onEnter();
-
-   // Clears all await-local state.
-   public abstract void reset();
-
-   public abstract void serialize(JsonObject json);
-
-   public AwaitCondition(AwaitType type) {
-      this.type = type;
-   }
-
-   public AwaitType getType() {
-      return this.type;
-   }
 }

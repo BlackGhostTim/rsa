@@ -6,12 +6,11 @@ import com.ricedotwho.rsm.component.impl.location.Location;
 import com.ricedotwho.rsm.component.impl.map.handler.Dungeon;
 import com.ricedotwho.rsm.data.Colour;
 import com.ricedotwho.rsm.event.api.SubscribeEvent;
-import com.ricedotwho.rsm.event.impl.game.ClientTickEvent.Start;
-import com.ricedotwho.rsm.event.impl.render.Render3DEvent.Extract;
+import com.ricedotwho.rsm.event.impl.game.ClientTickEvent;
+import com.ricedotwho.rsm.event.impl.render.Render3DEvent;
 import com.ricedotwho.rsm.module.Module;
 import com.ricedotwho.rsm.module.api.Category;
 import com.ricedotwho.rsm.module.api.ModuleInfo;
-import com.ricedotwho.rsm.ui.clickgui.settings.Setting;
 import com.ricedotwho.rsm.ui.clickgui.settings.group.DefaultGroupSetting;
 import com.ricedotwho.rsm.ui.clickgui.settings.impl.BooleanSetting;
 import com.ricedotwho.rsm.ui.clickgui.settings.impl.ColourSetting;
@@ -19,344 +18,292 @@ import com.ricedotwho.rsm.ui.clickgui.settings.impl.ModeSetting;
 import com.ricedotwho.rsm.utils.render.render3d.type.FilledBox;
 import com.ricedotwho.rsm.utils.render.render3d.type.FilledOutlineBox;
 import com.ricedotwho.rsm.utils.render.render3d.type.OutlineBox;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.passive.BatEntity;
-import net.minecraft.entity.boss.WitherEntity;
-import net.minecraft.entity.decoration.ArmorStandEntity;
-import net.minecraft.entity.mob.EndermanEntity;
-import net.minecraft.entity.mob.GiantEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.StringHelper;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.client.network.ClientPlayerEntity;
+import lombok.Getter;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.util.StringUtil;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ambient.Bat;
+import net.minecraft.world.entity.boss.wither.WitherBoss;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.monster.EnderMan;
+import net.minecraft.world.entity.monster.Giant;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
+import java.util.*;
+
+@Getter
 @ModuleInfo(aliases = "Esp", id = "Esp", category = Category.RENDER)
 public class Esp extends Module {
-   private final ModeSetting renderMode = new ModeSetting("Mode", "Filled Outline", List.of("Filled Outline", "Filled", "Outline"));
-   private final BooleanSetting showStarredMobs = new BooleanSetting("Starred Mobs", true);
-   private final BooleanSetting onlyShowInCurrentRoom = new BooleanSetting("Current Room Only", true);
-   private final BooleanSetting drawBloodMobs = new BooleanSetting("Blood Mobs", false);
-   private final BooleanSetting withers = new BooleanSetting("Withers", true);
-   private final BooleanSetting bats = new BooleanSetting("Bats", false);
-   private final BooleanSetting depth = new BooleanSetting("Depth", false);
-   private final DefaultGroupSetting colours = new DefaultGroupSetting("Colours", this);
-   private final ColourSetting starredFill = new ColourSetting("Star Fill", new Colour(444137617));
-   private final ColourSetting starredOutline = new ColourSetting("Star Outline", new Colour(-2752257));
-   private final ColourSetting bloodFill = new ColourSetting("Blood Fill", new Colour(443678720));
-   private final ColourSetting bloodOutline = new ColourSetting("Blood Outline", new Colour(-65536));
-   private final ColourSetting witherFill = new ColourSetting("Wither Fill", new Colour(436221576));
-   private final ColourSetting witherOutline = new ColourSetting("Wither Outline", new Colour(-16750849));
-   private final ColourSetting batFill = new ColourSetting("Bat Fill", new Colour(173, 92, 173, 90));
-   private final ColourSetting batOutline = new ColourSetting("Bat Outline", new Colour(173, 92, 173));
-   private final Set<Integer> starredMobs = new HashSet<>();
-   private final Set<Integer> bloodMobs = new HashSet<>();
-   private final Set<Integer> batMobs = new HashSet<>();
-   private final Set<Integer> bloodNames = new HashSet<>();
-   private int wither = -1;
-   private double witherDistance = Double.MAX_VALUE;
-   public float updateInterval = 10.0F;
 
-   public Esp() {
-      this.addName("Revoker");
-      this.addName("Psycho");
-      this.addName("Reaper");
-      this.addName("Cannibal");
-      this.addName("Mute");
-      this.addName("Ooze");
-      this.addName("Putrid");
-      this.addName("Freak");
-      this.addName("Leech");
-      this.addName("Tear");
-      this.addName("Parasite");
-      this.addName("Flamer");
-      this.addName("Skull");
-      this.addName("Mr. Dead");
-      this.addName("Vader");
-      this.addName("Frost");
-      this.addName("Walker");
-      this.addName("Wandering Soul");
-      this.addName("Bonzo");
-      this.addName("Scarf");
-      this.addName("Livid");
-      this.addName("Spirit Bear");
-      this.registerProperty(
-         new Setting[]{this.renderMode, this.showStarredMobs, this.onlyShowInCurrentRoom, this.drawBloodMobs, this.bats, this.withers, this.colours}
-      );
-      this.colours
-         .add(
-            new Setting[]{
-               this.starredFill, this.starredOutline, this.bloodFill, this.bloodOutline, this.witherFill, this.witherOutline, this.batFill, this.batOutline
-            }
-         );
-   }
+    //basically 1:1 Ported from Hyper's esp
 
-   private void addName(String name) {
-      this.bloodNames.add(name.hashCode());
-   }
+    private final ModeSetting renderMode = new ModeSetting("Mode", "Filled Outline", List.of("Filled Outline", "Filled", "Outline"));
 
-   public void onEnable() {
-      this.reset();
-   }
+    private final BooleanSetting
+            showStarredMobs = new BooleanSetting("Starred Mobs", true),
+            onlyShowInCurrentRoom = new BooleanSetting("Current Room Only", true),
+            drawBloodMobs = new BooleanSetting("Blood Mobs", false),
+            withers = new BooleanSetting("Withers", true),
+            bats = new BooleanSetting("Bats", false),
+            depth = new BooleanSetting("Depth", false);
 
-   public void reset() {
-      this.starredMobs.clear();
-      this.bloodMobs.clear();
-      this.batMobs.clear();
-      this.wither = -1;
-      this.witherDistance = Double.MAX_VALUE;
-   }
+    private final DefaultGroupSetting colours = new DefaultGroupSetting("Colours", this);
 
-   @SubscribeEvent
-   public void onRender3dEvent(Extract event) {
-      if (mc.player != null && mc.world != null) {
-         if (Location.getArea() == Island.Dungeon) {
-            float partialTicks = event.getContext().tickCounter().getTickProgress(false);
-            if ((Boolean)this.showStarredMobs.getValue() && !this.starredMobs.isEmpty()) {
-               this.handleRender(this.starredMobs, this.getStarredOutline().getValue(), this.getStarredFill().getValue(), partialTicks);
-            }
+    private final ColourSetting
+            starredFill = new ColourSetting("Star Fill", new Colour(0x1A790091)),
+            starredOutline = new ColourSetting("Star Outline", new Colour(0xFFD600FF)),
+            bloodFill = new ColourSetting("Blood Fill", new Colour(0x1A720000)),
+            bloodOutline = new ColourSetting("Blood Outline", new Colour(0xFFFF0000)),
+            witherFill = new ColourSetting("Wither Fill", new Colour(0x1A003688)),
+            witherOutline = new ColourSetting("Wither Outline", new Colour(0xFF0066FF)),
+            batFill = new ColourSetting("Bat Fill", new Colour(173, 92, 173, 90)),
+            batOutline = new ColourSetting("Bat Outline", new Colour(173, 92, 173));
 
-            if ((Boolean)this.drawBloodMobs.getValue() && !this.bloodMobs.isEmpty()) {
-               this.handleRender(this.bloodMobs, this.getBloodOutline().getValue(), this.getBloodFill().getValue(), partialTicks);
-            }
+    // Tracked entities
+    private final Set<Integer> starredMobs = new HashSet<>();
+    private final Set<Integer> bloodMobs = new HashSet<>();
+    private final Set<Integer> batMobs = new HashSet<>();
+    private final Set<Integer> bloodNames = new HashSet<>();
+    
+    private int wither = -1;
+    private double witherDistance = Double.MAX_VALUE;
+    public float updateInterval = 10;
 
-            if ((Boolean)this.bats.getValue() && !this.batMobs.isEmpty()) {
-               this.handleRender(this.batMobs, this.getBatOutline().getValue(), this.getBatFill().getValue(), partialTicks);
-            }
+    public Esp() {
+        // Blood mob names
+        addName("Revoker");
+        addName("Psycho");
+        addName("Reaper");
+        addName("Cannibal");
+        addName("Mute");
+        addName("Ooze");
+        addName("Putrid");
+        addName("Freak");
+        addName("Leech");
+        addName("Tear");
+        addName("Parasite");
+        addName("Flamer");
+        addName("Skull");
+        addName("Mr. Dead");
+        addName("Vader");
+        addName("Frost");
+        addName("Walker");
+        addName("Wandering Soul");
+        addName("Bonzo");
+        addName("Scarf");
+        addName("Livid");
+        addName("Spirit Bear");
+        
+        this.registerProperty(
+                renderMode,
+                showStarredMobs,
+                onlyShowInCurrentRoom,
+                drawBloodMobs,
+                bats,
+                withers,
+                colours
+        );
 
-            if ((Boolean)this.withers.getValue() && this.wither != -1) {
-               Entity entity = mc.world.getEntityById(this.wither);
-               if (entity != null) {
-                  this.renderEntityBox(entity, this.getWitherOutline().getValue(), this.getWitherFill().getValue(), partialTicks);
-               } else {
-                  this.wither = -1;
-               }
-            }
-         }
-      }
-   }
+        colours.add(starredFill, starredOutline, bloodFill, bloodOutline, witherFill, witherOutline, batFill, batOutline);
+    }
+    
+    private void addName(String name) {
+        bloodNames.add(name.hashCode());
+    }
 
-   @SubscribeEvent
-   public void onTick(Start event) {
-      if (mc.world != null && mc.player != null && Location.getArea().is(Island.Dungeon)) {
-         if ((float)event.getTime() % this.updateInterval == 0.0F) {
-            this.updateTrackedEntities(mc.world);
-         }
-      }
-   }
+    @Override
+    public void onEnable() {
+        reset();
+    }
 
-   private void updateTrackedEntities(ClientWorld level) {
-      this.starredMobs.clear();
-      this.bloodMobs.clear();
-      this.wither = -1;
-      this.witherDistance = Double.MAX_VALUE;
+    @Override
+    public void reset() {
+        starredMobs.clear();
+        bloodMobs.clear();
+        batMobs.clear();
+        wither = -1;
+        witherDistance = Double.MAX_VALUE;
+    }
 
-      for (Entity entity : level.getEntities()) {
-         if ((Boolean)this.showStarredMobs.getValue() && entity instanceof ArmorStandEntity stand) {
-            if (this.isValidStarredEntity(stand)) {
-               Entity mob = this.getMobEntity(stand, level);
-               if (mob != null) {
-                  this.starredMobs.add(mob.getId());
-                  stand.setCustomNameVisible(true);
-                  mob.setInvisible(false);
-               }
-            }
-         } else if ((Boolean)this.showStarredMobs.getValue() && entity instanceof PlayerEntity && !(entity instanceof ClientPlayerEntity)) {
-            String name = entity.getName().getString().trim();
-            if (name.hashCode() == -662331259) {
-               this.starredMobs.add(entity.getId());
-               entity.setInvisible(false);
-            }
-         } else if ((Boolean)this.showStarredMobs.getValue() && entity instanceof EndermanEntity) {
-            if (entity.getName().getString().hashCode() == -1005553066) {
-               entity.setInvisible(false);
-            }
-         } else if ((Boolean)this.drawBloodMobs.getValue() && entity instanceof PlayerEntity && !(entity instanceof ClientPlayerEntity)) {
-            String name = entity.getName().getString().trim();
-            if (this.bloodNames.contains(name.hashCode())) {
-               this.bloodMobs.add(entity.getId());
-               entity.setInvisible(false);
-            }
-         } else if ((Boolean)this.drawBloodMobs.getValue() && entity instanceof GiantEntity && !Dungeon.isInBoss()) {
-            this.bloodMobs.add(entity.getId());
-            entity.setInvisible(false);
-         } else if ((Boolean)this.bats.getValue() && entity instanceof BatEntity && !entity.isInvisible()) {
-            this.batMobs.add(entity.getId());
-         } else if ((Boolean)this.withers.getValue() && entity instanceof WitherEntity e && !entity.isInvisible()) {
-            ClientPlayerEntity Player = MinecraftClient.getInstance().player;
-            if (e.getMaxHealth() != 300.0F) {
-               if (this.wither == -1) {
-                  this.wither = entity.getId();
-               } else {
-                  double dist = entity.squaredDistanceTo(Player);
-                  if (dist < this.witherDistance) {
-                     this.witherDistance = dist;
-                     this.wither = entity.getId();
-                  }
-               }
-            }
-         }
-      }
-   }
+    @SubscribeEvent
+    public void onRender3dEvent(Render3DEvent.Extract event) {
+        if (mc.player == null || mc.level == null) return;
+        
+        if (!(Location.getArea() == Island.Dungeon)) return;
 
-   private void handleRender(Set<Integer> entityIds, Colour outlineColor, Colour fillColor, float partialTicks) {
-      ClientWorld level = MinecraftClient.getInstance().world;
-      if (level != null) {
-         List<Integer> toRemove = new ArrayList<>();
+        float partialTicks = event.getContext().tickCounter().getGameTimeDeltaPartialTick(false);
 
-         for (int entityId : entityIds) {
-            Entity entity = level.getEntityById(entityId);
-            if (entity != null && !(entity instanceof LivingEntity living && living.isDead())) {
-               this.renderEntityBox(entity, outlineColor, fillColor, partialTicks);
+        // Render starred mobs
+        if (showStarredMobs.getValue() && !starredMobs.isEmpty()) {
+            handleRender(starredMobs, this.getStarredOutline().getValue(), this.getStarredFill().getValue(), partialTicks);
+        }
+
+        // Render blood mobs
+        if (drawBloodMobs.getValue() && !bloodMobs.isEmpty()) {
+            handleRender(bloodMobs, this.getBloodOutline().getValue(), this.getBloodFill().getValue(), partialTicks);
+        }
+
+        if (bats.getValue() && !batMobs.isEmpty()) {
+            handleRender(batMobs, this.getBatOutline().getValue(), this.getBatFill().getValue(), partialTicks);
+        }
+
+        // Render wither
+        if (withers.getValue() && wither != -1) {
+            Entity entity = mc.level.getEntity(wither);
+            if (entity != null) {
+                renderEntityBox(entity, this.getWitherOutline().getValue(), this.getWitherFill().getValue(), partialTicks);
             } else {
-               toRemove.add(entityId);
+                wither = -1;
             }
-         }
+        }
+    }
 
-         toRemove.forEach(entityIds::remove);
-      }
-   }
+    @SubscribeEvent
+    public void onTick(ClientTickEvent.Start event) {
+        if (mc.level == null || mc.player == null || !Location.getArea().is(Island.Dungeon)) return;
+        if (event.getTime() % updateInterval == 0) {
+            updateTrackedEntities(mc.level);
+        }
+    }
 
-   private void renderEntityBox(Entity entity, Colour outline, Colour fill, float partialTicks) {
-      Vec3d interpolatedPos = entity.getLerpedPos(partialTicks);
-      float width = entity.getWidth();
-      float height = entity.getHeight();
-      Box aabb = new Box(
-         interpolatedPos.x - width / 2.0F,
-         interpolatedPos.y,
-         interpolatedPos.z - width / 2.0F,
-         interpolatedPos.x + width / 2.0F,
-         interpolatedPos.y + height,
-         interpolatedPos.z + width / 2.0F
-      );
-      switch (this.renderMode.getIndex()) {
-         case 0:
-            Renderer3D.addTask(new FilledOutlineBox(aabb, fill, outline, (Boolean)this.getDepth().getValue()));
-            break;
-         case 1:
-            Renderer3D.addTask(new FilledBox(aabb, fill, (Boolean)this.getDepth().getValue()));
-            break;
-         default:
-            Renderer3D.addTask(new OutlineBox(aabb, outline, (Boolean)this.getDepth().getValue()));
-      }
-   }
+    private void updateTrackedEntities(ClientLevel level) {
+        starredMobs.clear();
+        bloodMobs.clear();
+        wither = -1;
+        witherDistance = Double.MAX_VALUE;
 
-   private boolean isValidStarredEntity(ArmorStandEntity entity) {
-      if (!entity.hasCustomName()) {
-         return false;
-      } else {
-         String name = StringHelper.stripTextFormat(Objects.requireNonNull(entity.getCustomName()).getString());
-         return name.contains("✯ ") && name.endsWith("❤");
-      }
-   }
+        for (Entity entity : level.entitiesForRendering()) {
+            // Starred mobs (armor stands with ✯ name)
+            if (showStarredMobs.getValue() && entity instanceof ArmorStand stand) {
+                if (!isValidStarredEntity(stand)) continue;
+                Entity mob = getMobEntity(stand, level);
+                if (mob != null) {
+                    starredMobs.add(mob.getId());
+                    stand.setCustomNameVisible(true);
+                    mob.setInvisible(false);
+                }
+                continue;
+            }
 
-   private Entity getMobEntity(ArmorStandEntity stand, ClientWorld level) {
-      Box searchBox = stand.getBoundingBox().offset(0.0, -1.0, 0.0);
-      return level.getOtherEntities(stand, searchBox)
-         .stream()
-         .filter(e -> e instanceof LivingEntity && !(e instanceof ArmorStandEntity) && !(e instanceof ClientPlayerEntity) && (!(e instanceof WitherEntity) || !e.isInvisible()))
-         .min(Comparator.comparingDouble(e -> e.squaredDistanceTo(stand)))
-         .orElse(null);
-   }
+            // Shadow Assassin (player entities with specific name)
+            if (showStarredMobs.getValue() && entity instanceof Player && !(entity instanceof LocalPlayer)) {
+                String name = entity.getName().getString().trim();
+                if (name.hashCode() == -0x277A5F7B) { // Shadow Assassin
+                    starredMobs.add(entity.getId());
+                    entity.setInvisible(false);
+                }
+                continue;
+            }
 
-   public ModeSetting getRenderMode() {
-      return this.renderMode;
-   }
+            // Fels (enderman with specific name)
+            if (showStarredMobs.getValue() && entity instanceof EnderMan) {
+                if (entity.getName().getString().hashCode() == -0x3BEF85AA) {
+                    entity.setInvisible(false);
+                }
+                continue;
+            }
 
-   public BooleanSetting getShowStarredMobs() {
-      return this.showStarredMobs;
-   }
+            // Blood mobs - players
+            if (drawBloodMobs.getValue() && entity instanceof Player && !(entity instanceof LocalPlayer)) {
+                String name = entity.getName().getString().trim();
+                if (bloodNames.contains(name.hashCode())) {
+                    bloodMobs.add(entity.getId());
+                    entity.setInvisible(false);
+                }
+                continue;
+            }
 
-   public BooleanSetting getOnlyShowInCurrentRoom() {
-      return this.onlyShowInCurrentRoom;
-   }
+            // Blood mobs - giants
+            if (drawBloodMobs.getValue() && entity instanceof Giant && !Dungeon.isInBoss()) { // why can I see goldors fucking sword giant thing :sob:
+                bloodMobs.add(entity.getId());
+                entity.setInvisible(false);
+                continue;
+            }
 
-   public BooleanSetting getDrawBloodMobs() {
-      return this.drawBloodMobs;
-   }
+            if (bats.getValue() && entity instanceof Bat && !entity.isInvisible()) {
+                batMobs.add(entity.getId());
+                continue;
+            }
 
-   public BooleanSetting getWithers() {
-      return this.withers;
-   }
+            // Withers
+            if (withers.getValue() && entity instanceof WitherBoss e && !entity.isInvisible()) {
+                LocalPlayer Player = Minecraft.getInstance().player;
+                if (e.getMaxHealth() != 300f && e.getScale() == 1f) {
+                    if (wither == -1) {
+                        wither = entity.getId();
+                        continue;
+                    }
+                    
+                    double dist = entity.distanceToSqr(Player);
+                    if (dist < witherDistance) {
+                        witherDistance = dist;
+                        wither = entity.getId();
+                    }
+                }
+            }
+        }
+    }
 
-   public BooleanSetting getBats() {
-      return this.bats;
-   }
+    private void handleRender(Set<Integer> entityIds, Colour outlineColor, Colour fillColor, float partialTicks) {
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) return;
 
-   public BooleanSetting getDepth() {
-      return this.depth;
-   }
+        List<Integer> toRemove = new ArrayList<>();
+        for (int entityId : entityIds) {
+            Entity entity = level.getEntity(entityId);
+            if (entity == null || entity instanceof LivingEntity living && living.isDeadOrDying()) {
+                toRemove.add(entityId);
+                continue;
+            }
+            renderEntityBox(entity, outlineColor, fillColor, partialTicks);
+        }
+        
+        toRemove.forEach(entityIds::remove);
+    }
 
-   public DefaultGroupSetting getColours() {
-      return this.colours;
-   }
+    private void renderEntityBox(Entity entity, Colour outline, Colour fill, float partialTicks) {
+        Vec3 interpolatedPos = entity.getPosition(partialTicks);
+        
+        float width = entity.getBbWidth();
+        float height = entity.getBbHeight();
 
-   public ColourSetting getStarredFill() {
-      return this.starredFill;
-   }
+        AABB aabb = new AABB(
+                interpolatedPos.x - width / 2,
+                interpolatedPos.y,
+                interpolatedPos.z - width / 2,
+                interpolatedPos.x + width / 2,
+                interpolatedPos.y + height,
+                interpolatedPos.z + width / 2
+        );
 
-   public ColourSetting getStarredOutline() {
-      return this.starredOutline;
-   }
+        switch (this.renderMode.getIndex()) {
+            case 0 -> Renderer3D.addTask(new FilledOutlineBox(aabb, fill, outline, this.getDepth().getValue()));
+            case 1 -> Renderer3D.addTask(new FilledBox(aabb, fill, this.getDepth().getValue()));
+            default -> Renderer3D.addTask(new OutlineBox(aabb, outline, this.getDepth().getValue()));
+        }
+    }
 
-   public ColourSetting getBloodFill() {
-      return this.bloodFill;
-   }
+    private boolean isValidStarredEntity(ArmorStand entity) {
+        if (!entity.hasCustomName()) return false;
+        String name = StringUtil.stripColor(Objects.requireNonNull(entity.getCustomName()).getString());
+        return name.contains("✯ ") && name.endsWith("❤");
+    }
 
-   public ColourSetting getBloodOutline() {
-      return this.bloodOutline;
-   }
-
-   public ColourSetting getWitherFill() {
-      return this.witherFill;
-   }
-
-   public ColourSetting getWitherOutline() {
-      return this.witherOutline;
-   }
-
-   public ColourSetting getBatFill() {
-      return this.batFill;
-   }
-
-   public ColourSetting getBatOutline() {
-      return this.batOutline;
-   }
-
-   public Set<Integer> getStarredMobs() {
-      return this.starredMobs;
-   }
-
-   public Set<Integer> getBloodMobs() {
-      return this.bloodMobs;
-   }
-
-   public Set<Integer> getBatMobs() {
-      return this.batMobs;
-   }
-
-   public Set<Integer> getBloodNames() {
-      return this.bloodNames;
-   }
-
-   public int getWither() {
-      return this.wither;
-   }
-
-   public double getWitherDistance() {
-      return this.witherDistance;
-   }
-
-   public float getUpdateInterval() {
-      return this.updateInterval;
-   }
+    private Entity getMobEntity(ArmorStand stand, ClientLevel level) {
+        AABB searchBox = stand.getBoundingBox().move(0.0, -1.0, 0.0);
+        
+        return level.getEntities(stand, searchBox)
+                .stream()
+                .filter(e -> e instanceof LivingEntity 
+                        && !(e instanceof ArmorStand) 
+                        && !(e instanceof LocalPlayer)
+                        && !(e instanceof WitherBoss && e.isInvisible()))
+                .min(Comparator.comparingDouble(e -> e.distanceToSqr(stand)))
+                .orElse(null);
+    }
 }

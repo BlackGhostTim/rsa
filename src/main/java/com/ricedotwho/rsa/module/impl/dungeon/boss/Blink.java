@@ -1,230 +1,360 @@
 package com.ricedotwho.rsa.module.impl.dungeon.boss;
 
 import com.ricedotwho.rsa.IMixin.IConnection;
-import com.ricedotwho.rsa.module.impl.dungeon.boss.p3.autop3.rings.BlinkRing;
+import com.ricedotwho.rsa.module.impl.dungeon.autoroutes.FakeKeyboardInput;
+import com.ricedotwho.rsa.module.impl.dungeon.boss.p3.autop3.recorder.MovementRecorder;
+import com.ricedotwho.rsa.module.impl.dungeon.boss.p3.terminals.auto.AutoTerms;
+import com.ricedotwho.rsa.module.impl.dungeon.boss.p3.terminals.auto.terminals.TerminalType;
+import com.ricedotwho.rsa.packet.FakeClientPacketListener;
+import com.ricedotwho.rsa.packet.FakeLocalPlayer;
 import com.ricedotwho.rsm.RSM;
+import com.ricedotwho.rsm.component.impl.camera.ClientRotationHandler;
+import com.ricedotwho.rsm.component.impl.camera.ClientRotationProvider;
 import com.ricedotwho.rsm.event.api.SubscribeEvent;
-import com.ricedotwho.rsm.event.impl.client.PacketEvent.Send;
+import com.ricedotwho.rsm.event.impl.client.PacketEvent;
+import com.ricedotwho.rsm.event.impl.game.ClientTickEvent;
 import com.ricedotwho.rsm.event.impl.render.Render2DEvent;
-import com.ricedotwho.rsm.event.impl.world.WorldEvent.Load;
+import com.ricedotwho.rsm.event.impl.world.WorldEvent;
+import com.ricedotwho.rsm.mixins.accessor.LocalPlayerAccessor;
 import com.ricedotwho.rsm.module.Module;
 import com.ricedotwho.rsm.module.api.Category;
 import com.ricedotwho.rsm.module.api.ModuleInfo;
-import com.ricedotwho.rsm.ui.clickgui.settings.Setting;
+import com.ricedotwho.rsm.ui.clickgui.settings.impl.BooleanSetting;
 import com.ricedotwho.rsm.ui.clickgui.settings.impl.DragSetting;
 import com.ricedotwho.rsm.ui.clickgui.settings.impl.NumberSetting;
 import com.ricedotwho.rsm.utils.ChatUtils;
-import java.math.BigDecimal;
-import java.util.LinkedList;
-import net.minecraft.util.PlayerInput;
-import net.minecraft.network.packet.Packet;
-import net.minecraft.network.packet.c2s.play.TeleportConfirmC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerInputC2SPacket;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.network.packet.c2s.play.ClientTickEndC2SPacket;
+import lombok.Getter;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.ClientInput;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.common.ServerboundPongPacket;
+import net.minecraft.network.protocol.game.*;
 import org.joml.Vector2d;
 
+import java.util.LinkedList;
+import java.util.List;
+
+
 @ModuleInfo(aliases = "Blink", id = "Blink", category = Category.MOVEMENT, hasKeybind = true)
-public class Blink extends Module {
-   private static Blink INSTANCE;
-   private PlayerInput lastInput;
-   private final DragSetting gui = new DragSetting("Blink Hud", new Vector2d(100.0, 100.0), new Vector2d(144.0, 80.0));
-   private final NumberSetting maxBlinkPacket = new NumberSetting("Max Blink Ticks", 1.0, 30.0, 17.0, 1.0);
-   private BlinkRing currentRing;
-   private final LinkedList<Packet<?>> queue = new LinkedList<>();
-   private boolean flushing = false;
-   private int packetCount = 0;
+public class Blink extends Module implements ClientRotationProvider {
+    private static Blink INSTANCE;
 
-   public Blink() {
-      this.registerProperty(new Setting[]{this.maxBlinkPacket, this.gui});
-   }
+    private final DragSetting gui = new DragSetting("Balding Blink Hud", new Vector2d(100, 100), new Vector2d(144, 80));
+    private final NumberSetting maxBlinkPacket = new NumberSetting("Max Blink Packets", 1, 30, 16, 1);
+    private final BooleanSetting flushGUIPongs = new BooleanSetting("Flush GUI Pongs", true);
+    private final BooleanSetting flushInMelody = new BooleanSetting("Flush In Melody", true);
+    private final NumberSetting smallMovementDelta = new NumberSetting("Velocity Epsilon", 0, 7, 4, 1);
 
-   @SubscribeEvent
-   public void onRenderGui(Render2DEvent event) {
-      if (!this.queue.isEmpty()) {
-         this.gui
-            .renderScaled(
-               event.getGfx(),
-               () -> event.getGfx()
-                  .drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer, "Blinking", (int)this.gui.getPosition().x, (int)this.gui.getPosition().y, -1),
-               10.0F,
-               10.0F
-            );
-      }
-   }
+    private boolean sentMove = false;
+    private boolean flushedPongs = false;
 
-   @SubscribeEvent
-   public void onSendPacket(Send event) {
-      if (event.getPacket() instanceof PlayerInputC2SPacket inputPacket) {
-         if (this.lastInput != null && this.inputEquals(inputPacket.input(), this.lastInput)) {
+    private final LinkedList<Packet<?>> queue = new LinkedList<>();
+    @Getter
+    private boolean flushing = false;
+    private int packetCount = 0;
+
+
+    public Blink() {
+        this.registerProperty(
+                maxBlinkPacket,
+                flushGUIPongs,
+                smallMovementDelta,
+                flushInMelody,
+                gui
+        );
+    }
+
+    @SubscribeEvent
+    public void onRenderGui(Render2DEvent event) {
+        if (Minecraft.getInstance().screen != null) return;
+
+        gui.renderScaled(event.getGfx(), () -> {
+            event.getGfx().drawCenteredString(Minecraft.getInstance().font, ("Packets : " + packetCount), (int) gui.getPosition().x, (int) gui.getPosition().y, 0xFFFFFFFF);
+            event.getGfx().drawCenteredString(Minecraft.getInstance().font, ("Pongs : " + queue.size()), (int) gui.getPosition().x, (int) gui.getPosition().y + Minecraft.getInstance().font.lineHeight, 0xFFFFFFFF);
+        }, 5, 5);
+    }
+
+    @SubscribeEvent
+    public void onWorldLoad(WorldEvent.Load event) {
+        synchronized (queue) {
+            this.packetCount = 0;
+            this.queue.clear();
+            if (this.isEnabled())
+                this.setEnabled(false);
+        }
+    }
+
+
+    public static boolean onSendPacket(Packet<?> packet) {
+        if (INSTANCE == null) INSTANCE = RSM.getModule(Blink.class);
+        // if the instance is still null after this, the module should probably just be disabled as well
+        return INSTANCE != null && INSTANCE.onPreSendPacket(packet);
+    }
+
+    public void blinkMovement(List<MovementRecorder.PlayerInput> movements) {
+        if (Minecraft.getInstance().level == null || Minecraft.getInstance().player == null || Minecraft.getInstance().getConnection() == null || packetCount < 1 || movements.isEmpty()) return;
+        int tickCount = Math.min(movements.size(), packetCount);
+        if (movements.size() > packetCount) {
+            movements = movements.subList(0, packetCount);
+        }
+
+
+        LocalPlayer player = Minecraft.getInstance().player;
+
+        ClientInput oldInputs = player.input;
+        player.input = new FakeKeyboardInput(Minecraft.getInstance().options);
+
+        boolean bl = flushing;
+        flushing = true;
+        for (int i = 0; i < tickCount; i++) {
+            MovementRecorder.PlayerInput input = movements.get(i);
+            player.input.keyPresses = input.input();
+
+            player.setYRot(input.yaw);
+            player.setXRot(input.pitch);
+            player.tick();
+            Minecraft.getInstance().getConnection().send(new ServerboundClientTickEndPacket());
+            packetCount--;
+        }
+        flushing = bl;
+        this.flushPongs();
+
+        player.input = oldInputs;
+    }
+
+    @SubscribeEvent
+    public void onTickStart(ClientTickEvent.Start event) {
+        this.flushedPongs = false;
+    }
+
+    @SubscribeEvent
+    public void onSendPacket(PacketEvent.Send event) {
+        if (getPongCount() < 8 || !flushGUIPongs.getValue()) return;
+        Packet<?> packet = event.getPacket();
+        if (packet instanceof ServerboundContainerClickPacket || packet instanceof ServerboundInteractPacket || packet instanceof ServerboundChatCommandSignedPacket || packet instanceof ServerboundChatCommandPacket || packet instanceof ServerboundUseItemOnPacket || packet instanceof ServerboundUseItemPacket) {
+            this.flushPongs();
+        }
+    }
+
+
+    @SubscribeEvent
+    public void onReceivePacket(PacketEvent.Receive event) {
+        if (Minecraft.getInstance().player == null) return;
+
+        if (event.getPacket() instanceof ClientboundSetEntityMotionPacket motionPacket) {
+            if (motionPacket.getId() != Minecraft.getInstance().player.getId()) return;
+            synchronized (queue) {
+                this.flushPongs();
+                this.flushedPongs = true;
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public void onLocalPlayerTick(ClientTickEvent.Player event) {
+        if (packetCount >= maxBlinkPacket.getValue().intValue() || smallMovementDelta.getValue().intValue() == 0 || !MovementRecorder.isIdle()) return;
+
+        LocalPlayer player = event.getPlayer();
+        if (Minecraft.getInstance().level == null || Minecraft.getInstance().player == null || player.getId() != Minecraft.getInstance().player.getId()) return;
+
+        FakeClientPacketListener packetListener = new FakeClientPacketListener(null);
+        LocalPlayer copy = new FakeLocalPlayer(Minecraft.getInstance(), Minecraft.getInstance().level, packetListener, player.getStats(), player.getRecipeBook(), player.input.keyPresses, false);
+
+        copy.setPos(player.position());
+        copy.setYRot(player.getYRot());
+        copy.setXRot(player.getXRot());
+        copy.setDeltaMovement(player.getDeltaMovement());
+        copy.xxa = player.xxa;
+        copy.yya = player.yya;
+        copy.zza = player.zza;
+
+        copy.input = new ClientInput();
+        copy.input.keyPresses = player.input.keyPresses;
+
+        copy.fallDistance = player.fallDistance;
+        copy.noPhysics = player.noPhysics;
+        copy.setSprinting(player.isSprinting());
+        copy.setBoundingBox(player.getBoundingBox());
+        copy.setSpeed(player.getSpeed());
+        copy.setOnGround(player.onGround());
+        copy.setPose(player.getPose());
+        copy.setClientLoaded(true);
+
+        copy.tick();
+        double delta = smallMovementDelta.getValue().doubleValue() / 100d;
+        double distSq = copy.position().distanceToSqr(player.position());
+
+        if (distSq < delta * delta) {
             event.setCancelled(true);
-         }
+        }
+    }
 
-         this.lastInput = inputPacket.input();
-      }
-   }
 
-   private boolean inputEquals(PlayerInput input1, PlayerInput input2) {
-      return input1.sneak() == input2.sneak()
-         && input1.forward() == input2.forward()
-         && input1.backward() == input2.backward()
-         && input1.left() == input2.left()
-         && input1.right() == input2.right()
-         && input1.jump() == input2.jump()
-         && input1.sprint() == input2.sprint();
-   }
+    private boolean onPreSendPacket(Packet<?> packet) {
+//        if (packet instanceof ServerboundPongPacket && (!this.isEnabled() || flushing)) {
+//            System.out.println(((ServerboundPongPacket) packet).getId());
+//            int id  = ((ServerboundPongPacket) packet).getId();
+//            if (id + 1 != last) {
+//                ChatUtils.chat("mismatch!");
+//            }
+//            last = id;
+//            return false;
+//        }
+        if (Minecraft.getInstance().player == null || !this.isEnabled() || flushing) return false;
 
-   @SubscribeEvent
-   public void onWorldLoad(Load event) {
-      synchronized (this.queue) {
-         this.queue.clear();
-         if (this.isEnabled()) {
-            this.setEnabled(false);
-         }
-      }
-   }
+        if (packet instanceof ServerboundAcceptTeleportationPacket) {
+            this.flushPongs();
+            this.flushedPongs = true;
+            return false;
+        }
 
-   public static boolean onSendPacket(Packet<?> packet) {
-      if (INSTANCE == null) {
-         INSTANCE = (Blink)RSM.getModule(Blink.class);
-      }
+        if (packet instanceof ServerboundPongPacket) {
+            if (flushedPongs) return false;
 
-      return INSTANCE.onPreSendPacket(packet);
-   }
+            queue.add(packet);
 
-   private boolean onPreSendPacket(Packet<?> packet) {
-      if (MinecraftClient.getInstance().player != null && this.isEnabled()) {
-         synchronized (this.queue) {
-            if (this.flushing) {
-               return false;
-            } else {
-               boolean bl = true;
-               if (this.currentRing != null
-                  && (this.packetCount >= ((BigDecimal)this.maxBlinkPacket.getValue()).intValue() || this.currentRing.isDonePlaying())) {
-                  if (packet instanceof PlayerMoveC2SPacket || packet instanceof PlayerInputC2SPacket) {
-                     return true;
-                  }
-
-                  if (packet instanceof TeleportConfirmC2SPacket) {
-                     if (this.isEnabled()) {
-                        this.onKeyToggle();
-                     }
-
-                     return false;
-                  }
-               }
-
-               if (packet instanceof ClientTickEndC2SPacket) {
-                  this.packetCount++;
-                  if (this.currentRing != null) {
-                     if (this.packetCount >= ((BigDecimal)this.maxBlinkPacket.getValue()).intValue()) {
-                        bl = false;
-                        this.packetCount--;
-                     }
-                  } else if (this.packetCount >= ((BigDecimal)this.maxBlinkPacket.getValue()).intValue()) {
-                     this.onKeyToggle();
-                     return false;
-                  }
-               }
-
-               if (bl) {
-                  this.queue.add(packet);
-                  return true;
-               } else {
-                  return false;
-               }
+            if (queue.size() > Math.min(14, packetCount - 2)) {
+                Packet<?> ping = queue.removeFirst();
+                actuallySendImmediately(ping);
             }
-         }
-      } else {
-         return false;
-      }
-   }
 
-   public int getChargedCount() {
-      return this.packetCount;
-   }
-
-   public void clearMovements() {
-      this.queue.removeIf(p -> p instanceof PlayerInputC2SPacket || p instanceof PlayerMoveC2SPacket);
-   }
-
-   public void actuallySendImmediately(Packet<?> packet) {
-      if (MinecraftClient.getInstance().getNetworkHandler() != null) {
-         synchronized (this.queue) {
-            this.flushing = true;
-            ((IConnection)MinecraftClient.getInstance().getNetworkHandler().getConnection()).sendPacketImmediately(packet);
-            this.flushing = true;
-         }
-      }
-   }
-
-   public void actuallySend(Packet<?> packet) {
-      if (MinecraftClient.getInstance().getNetworkHandler() != null) {
-         synchronized (this.queue) {
-            this.flushing = true;
-            MinecraftClient.getInstance().getNetworkHandler().sendPacket(packet);
-            this.flushing = true;
-         }
-      }
-   }
-
-   public void onEnable() {
-      super.onEnable();
-      this.flush();
-      this.currentRing = null;
-      this.lastInput = null;
-      this.packetCount = 0;
-   }
-
-   public void onDisable() {
-      super.onDisable();
-      ChatUtils.chat("Packets : " + this.queue.stream().filter(p -> p instanceof PlayerMoveC2SPacket).count(), new Object[0]);
-      this.flush();
-      this.currentRing = null;
-      this.lastInput = null;
-      this.packetCount = 0;
-   }
-
-   private void flushTick() {
-      if (MinecraftClient.getInstance().getNetworkHandler() != null) {
-         synchronized (this.queue) {
-            this.flushing = true;
-            if (this.queue.isEmpty()) {
-               this.flushing = false;
-               this.setEnabled(false);
-            } else {
-               while (!this.queue.isEmpty()) {
-                  Packet<?> packet = this.queue.poll();
-                  ((IConnection)MinecraftClient.getInstance().getNetworkHandler().getConnection()).sendPacketImmediately(packet);
-                  if (packet instanceof ClientTickEndC2SPacket) {
-                     this.flushing = false;
-                     return;
-                  }
-               }
-
-               this.flushing = false;
+            if (getPongCount() >= 8 && flushInMelody.getValue()) {
+                AutoTerms autoTerms = RSM.getModule(AutoTerms.class);
+                if (autoTerms.isEnabled() && autoTerms.isInTerm() && autoTerms.getTerminal().getType() == TerminalType.MELODY)
+                    this.flushPongs();
             }
-         }
-      }
-   }
+            return true;
+        }
 
-   private void flush() {
-      if (MinecraftClient.getInstance().getNetworkHandler() != null) {
-         synchronized (this.queue) {
-            this.flushing = true;
-            if (this.queue.isEmpty()) {
-               this.flushing = false;
-            } else {
-               this.queue.forEach(packet -> ((IConnection)MinecraftClient.getInstance().getNetworkHandler().getConnection()).sendPacketImmediately((Packet<?>)packet));
-               this.queue.clear();
-               this.flushing = false;
+        if (packetCount >= maxBlinkPacket.getValue().intValue()) return false;
+
+        LocalPlayerAccessor accessor = (LocalPlayerAccessor) Minecraft.getInstance().player;
+
+        if (packet instanceof ServerboundClientTickEndPacket) {
+            if (!sentMove) {
+                int reminder = accessor.getPositionReminder();
+                if (reminder > 0) {
+                    accessor.setPositionReminder(reminder - 1);
+                }
+                packetCount++;
+                return true;
             }
-         }
-      }
-   }
+            sentMove = false;
+            return false;
+        }
 
-   public void setCurrentRing(BlinkRing currentRing) {
-      this.currentRing = currentRing;
-   }
+        if (packet instanceof ServerboundMovePlayerPacket || packet instanceof ServerboundPlayerInputPacket) {
+            sentMove = true;
+            return false;
+        }
+        return false;
+    }
+
+    public int getChargedCount() {
+        return this.packetCount;
+    }
+
+    public int getPongCount() {
+        return this.queue.size();
+    }
+
+    public void actuallySendImmediately(Packet<?> packet) {
+        if (Minecraft.getInstance().getConnection() == null) return;
+
+        synchronized (queue) { // Need to block, to make sure that other threads don't modify flushing
+            this.flushing = true;
+            ((IConnection) Minecraft.getInstance().getConnection().getConnection()).sendPacketImmediately(packet);
+            this.flushing = false;
+        }
+    }
+
+    public void actuallySend(Packet<?> packet) {
+        if (Minecraft.getInstance().getConnection() == null) return;
+
+        synchronized (queue) { // Need to block, to make sure that other threads don't modify flushing
+            this.flushing = true;
+            Minecraft.getInstance().getConnection().send(packet);
+            this.flushing = true;
+        }
+    }
+
+    @Override
+    public void onEnable() {
+        super.onEnable();
+        ClientRotationHandler.registerProvider(this);
+    }
+
+    @Override
+    public void onDisable() {
+        super.onDisable();
+        this.flushPongs();
+        this.packetCount = 0;
+    }
+
+    public void flushPongs(int remainder) {
+        if (Minecraft.getInstance().getConnection() == null) return;
+        synchronized (queue) {
+            if (remainder >= queue.size() || queue.isEmpty()) return;
+            if (remainder <= 0) {
+                flushPongs();
+                return;
+            }
+
+            int sendCount = queue.size() - remainder;
+            flushing = true;
+
+            for (int i = 0; i < sendCount; i++) {
+                Packet<?> packet = queue.removeFirst();
+                ((IConnection) Minecraft.getInstance().getConnection().getConnection()).sendPacketImmediately(packet);
+            }
+
+            flushing = false;
+        }
+    }
+
+
+    public void flushPongs() {
+        if (Minecraft.getInstance().getConnection() == null) return;
+        synchronized (queue) {
+            flushing = true;
+            if (queue.isEmpty()) {
+                flushing = false;
+                return;
+            }
+            queue.forEach(packet -> {
+                ((IConnection) Minecraft.getInstance().getConnection().getConnection()).sendPacketImmediately(packet);
+            });
+
+            this.queue.clear();
+            flushing = false;
+        }
+    }
+
+    @Override
+    public boolean isClientRotationActive() {
+        return this.isEnabled();
+    }
+
+    @Override
+    public void onDesyncDisable() {
+        if (packetCount < maxBlinkPacket.getValue().intValue())
+            ClientRotationHandler.syncServerRotationToClient();
+    }
+
+    @Override
+    public void onDesyncPause() {
+        ClientRotationHandler.syncServerRotationToClient();
+    }
+
+
+    @Override
+    public boolean isDesyncPaused() {
+        return Minecraft.getInstance().player == null || Minecraft.getInstance().player.input.getMoveVector().lengthSquared() != 0f || packetCount >= maxBlinkPacket.getValue().intValue();
+    }
+
+    @Override
+    public boolean allowClientKeyInputs() {
+        return true;
+    }
 }

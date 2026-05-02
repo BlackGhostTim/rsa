@@ -15,128 +15,126 @@ import com.ricedotwho.rsm.data.Colour;
 import com.ricedotwho.rsm.data.Pos;
 import com.ricedotwho.rsm.utils.EtherUtils;
 import com.ricedotwho.rsm.utils.render.render3d.type.Line;
-import net.minecraft.item.Items;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.Vec3;
 
 public class DynamicEtherwarpNode extends Node {
-   private final float yaw;
-   private final float pitch;
-   private final boolean await;
-   private final int priority;
-   private Vec3d target;
+    private final float yaw;
+    private final float pitch;
+    private final boolean await;
+    private final int priority;
+    private Vec3 target;
 
-   public DynamicEtherwarpNode(Pos localPos, float yaw, float pitch, boolean await, int priority, AwaitManager awaits, boolean start) {
-      super(localPos, null, false);
-      this.yaw = yaw;
-      this.pitch = pitch;
-      this.await = await;
-      this.priority = priority;
-   }
+    public DynamicEtherwarpNode(Pos localPos, float yaw, float pitch, boolean await, int priority, AwaitManager awaits, boolean start) {
+        super(localPos, null, false);
+        this.yaw = yaw;
+        this.pitch = pitch;
+        this.await = await;
+        this.priority = priority;
+    }
 
-   public DynamicEtherwarpNode(Pos localPos, float yaw, float pitch, boolean await, int priority) {
-      this(localPos, yaw, pitch, await, priority, null, false);
-   }
+    public DynamicEtherwarpNode(Pos localPos, float yaw, float pitch, boolean await, int priority) {
+        this(localPos, yaw, pitch, await, priority, null, false);
+    }
 
-   @Override
-   public boolean shouldAwait() {
-      return this.await;
-   }
+    @Override
+    public boolean isInNode(Pos playerPos) {
+        return playerPos.squaredDistanceTo(this.realPos) <= EtherUtils.EPSILON;
+    }
 
-   @Override
-   public boolean run(Pos playerPos) {
-      ClientPlayerEntity player = MinecraftClient.getInstance().player;
-      if (player == null) {
-         return this.cancel();
-      } else {
-         KeyBinding.unpressAll();
-         if (!SwapManager.reserveSwap(Items.DIAMOND_SHOVEL)) {
-            return this.cancel();
-         } else if (!MinecraftClient.getInstance().player.getLastPlayerInput().sneak()) {
-            return this.cancel();
-         } else {
-            Pos playerCopy = playerPos.add(0.0, 1.54F, 0.0);
-            boolean swap = SwapManager.isDesynced();
-            PacketOrderManager.register(
-               PacketOrderManager.STATE.ITEM_USE,
-               () -> {
-                  if ((!swap || SwapManager.checkClientItem(Items.DIAMOND_SHOVEL)) && (swap || SwapManager.checkServerItem(Items.DIAMOND_SHOVEL))) {
-                     if (!SwapManager.sendAirC08(this.yaw, this.pitch, swap, false)) {
-                        RSA.chat("Failed to send dyn ether C08!");
-                     }
-                  } else {
-                     RSA.chat(
-                        "Big fuck up! : "
-                           + swap
-                           + ", "
-                           + MinecraftClient.getInstance().player.getInventory().getStack(SwapManager.getServerSlot()).getItem()
-                     );
-                  }
-               }
-            );
-            BlockPos etherPos = EtherUtils.fastGetEtherFromOrigin(playerCopy.asVec3(), this.yaw, this.pitch, 61);
-            if (etherPos == null) {
-               return false;
-            } else {
-               playerPos.x = etherPos.getX() + 0.5;
-               playerPos.y = etherPos.getY() + 1.05;
-               playerPos.z = etherPos.getZ() + 0.5;
-               return true;
+    @Override
+    public boolean shouldAwait() {
+        return this.await;
+    }
+
+    @Override
+    public boolean run(Pos playerPos) {
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player == null) return cancel();
+
+        if (!SwapManager.reserveSwap(Items.DIAMOND_SHOVEL)) return cancel();
+
+        if (!Minecraft.getInstance().player.getLastSentInput().shift()) {
+            return cancel();
+        }
+
+        Pos playerCopy = playerPos.add(0.0d, EtherUtils.SNEAK_EYE_HEIGHT, 0.0d);
+
+        boolean swap = SwapManager.isDesynced();
+        PacketOrderManager.register(PacketOrderManager.STATE.ITEM_USE, () -> {
+            if ((swap && !SwapManager.checkClientItem(Items.DIAMOND_SHOVEL)) || (!swap && !SwapManager.checkServerItem(Items.DIAMOND_SHOVEL))) {
+                // Swap didn't work??? It got swapped back? WTF
+                RSA.chat("Big fuck up! : " + swap + ", " + Minecraft.getInstance().player.getInventory().getItem(SwapManager.getServerSlot()).getItem());
+                return;
             }
-         }
-      }
-   }
 
-   @Override
-   public void calculate(UniqueRoom room) {
-      this.realPos = this.localPos;
-      Vec3d origin = this.localPos.add(0.0, 1.5899999618530274, 0.0).asVec3();
-      this.target = EtherUtils.rayTraceBlock(61, this.yaw, this.pitch, origin);
-      if (this.target == null) {
-         BlockPos pos = EtherUtils.fastGetEtherFromOrigin(origin, this.yaw, this.pitch, 61);
-         if (pos == null) {
-            this.target = Vec3d.ZERO;
-            return;
-         }
+            if (!SwapManager.sendAirC08(this.yaw, this.pitch, swap, false)) {
+                RSA.chat("Failed to send dyn ether C08!");
+                return;
+            }
+        });
 
-         this.target = pos.toCenterPos();
-      }
-   }
+        BlockPos etherPos = EtherUtils.fastGetEtherFromOrigin(playerCopy.asVec3(), this.yaw, this.pitch, 61);
+        if (etherPos == null) return false;
 
-   @Override
-   public int getPriority() {
-      return this.priority;
-   }
+        playerPos.x = etherPos.getX() + 0.5d;
+        playerPos.y = etherPos.getY() + 1.05d; // Fuck you hypixel for the 0.05d
+        playerPos.z = etherPos.getZ() + 0.5d;
+        return true;
+    }
 
-   @Override
-   public String getName() {
-      return "dynamicEther";
-   }
+    @Override
+    public void calculate(UniqueRoom room) {
+        this.realPos = this.localPos;
+        Vec3 origin = this.localPos.add(0d, EtherUtils.SNEAK_EYE_HEIGHT + 0.05, 0d).asVec3();
+        this.target = EtherUtils.rayTraceBlock(61, yaw, pitch, origin);
+        if (this.target == null) {
+            BlockPos pos = EtherUtils.fastGetEtherFromOrigin(origin, yaw, pitch, 61);
+            if (pos == null) {
+                this.target = Vec3.ZERO; // I give up atp
+                return;
+            }
+            this.target = pos.getCenter(); // Close enough and we don't really care
+        }
+    }
 
-   @Override
-   public void render(boolean depth) {
-      Vec3d position = this.getRealPos().asVec3();
-      Colour colour = this.getColour();
-      Renderer3D.addTask(new Ring(position, depth, this.getRadius(), colour));
-      Renderer3D.addTask(new Line(position, this.target, colour, colour, true));
-   }
+    @Override
+    public int getPriority() {
+        return this.priority;
+    }
 
-   @Override
-   public Colour getColour() {
-      return DynamicRoutes.getNodeColor().getValue();
-   }
+    @Override
+    public String getName() {
+        return "dynamicEther";
+    }
 
-   public static DynamicEtherwarpNode fromBlockPos(BlockPos pos, float yaw, float pitch, boolean await, int priority) {
-      Pos nodePos = new Pos(pos.toBottomCenterPos()).selfAdd(0.0, 1.0, 0.0);
-      return new DynamicEtherwarpNode(nodePos, yaw, pitch, await, Integer.MAX_VALUE - priority);
-   }
+    @Override
+    public void render(boolean depth) {
+        Vec3 position = this.getRealPos().asVec3();
+        Colour colour = this.getColour();
+        Renderer3D.addTask(new Ring(position, depth, this.getRadius(), colour));
+        Renderer3D.addTask(new Line(position, this.target, colour, colour, true));
+    }
 
-   public static DynamicEtherwarpNode supply(UniqueRoom fullRoom, ClientPlayerEntity player) {
-      Room mainRoom = fullRoom.getMainRoom();
-      Pos playerRelative = RoomUtils.getRelativePosition(new Pos(player.getEntityPos()), mainRoom);
-      return new DynamicEtherwarpNode(playerRelative, player.getYaw(), player.getPitch(), false, 0);
-   }
+
+    @Override
+    public Colour getColour() {
+        return DynamicRoutes.getNodeColor().getValue();
+    }
+
+    public static DynamicEtherwarpNode fromPos(int x, float y, int z, float yaw, float pitch, boolean await, int priority) {
+        // +0.05 should already be in the node position
+        Pos nodePos = new Pos(x + 0.5, y + 1f, z + 0.5);
+        return new DynamicEtherwarpNode(nodePos, yaw, pitch, await, Integer.MAX_VALUE - priority);
+    }
+
+    public static DynamicEtherwarpNode supply(UniqueRoom fullRoom, LocalPlayer player) {
+        // Won't work properly when adding manually because not 0.05 blocks off of ground
+        Room mainRoom = fullRoom.getMainRoom();
+        Pos playerRelative = RoomUtils.getRelativePosition(new Pos(player.position()), mainRoom);
+        return new DynamicEtherwarpNode(playerRelative, player.getYRot(), player.getXRot(), false, 0);
+    }
 }

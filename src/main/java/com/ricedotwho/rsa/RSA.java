@@ -1,26 +1,15 @@
 package com.ricedotwho.rsa;
 
-import com.ricedotwho.rsa.command.impl.AutoCroesusCommand;
-import com.ricedotwho.rsa.command.impl.BBGCommand;
-import com.ricedotwho.rsa.command.impl.BloodBlinkCommand;
-import com.ricedotwho.rsa.command.impl.DynamicRouteCommand;
-import com.ricedotwho.rsa.command.impl.RSADevCommand;
-import com.ricedotwho.rsa.command.impl.RouteCommand;
-import com.ricedotwho.rsa.command.impl.SecretAuraCommand;
-import com.ricedotwho.rsa.command.impl.VelocityBufferCommand;
+import com.ricedotwho.rsa.command.impl.*;
 import com.ricedotwho.rsa.component.impl.Edge;
 import com.ricedotwho.rsa.component.impl.Jump;
-import com.ricedotwho.rsa.module.impl.dungeon.AutoUlt;
-import com.ricedotwho.rsa.module.impl.dungeon.BloodBlink;
-import com.ricedotwho.rsa.module.impl.dungeon.DungeonBreaker;
-import com.ricedotwho.rsa.module.impl.dungeon.DynamicRoutes;
-import com.ricedotwho.rsa.module.impl.dungeon.FastLeap;
-import com.ricedotwho.rsa.module.impl.dungeon.SecretAura;
-import com.ricedotwho.rsa.module.impl.dungeon.SecretHitboxes;
+import com.ricedotwho.rsa.component.impl.pathfinding.score.DungeonRoomScore;
+import com.ricedotwho.rsa.module.impl.dungeon.*;
 import com.ricedotwho.rsa.module.impl.dungeon.autoroutes.AutoRoutes;
 import com.ricedotwho.rsa.module.impl.dungeon.boss.Blink;
 import com.ricedotwho.rsa.module.impl.dungeon.boss.BreakerAura;
 import com.ricedotwho.rsa.module.impl.dungeon.boss.p2.PadTimer;
+import com.ricedotwho.rsa.module.impl.dungeon.boss.p3.LavaBounce;
 import com.ricedotwho.rsa.module.impl.dungeon.boss.p3.TermAura;
 import com.ricedotwho.rsa.module.impl.dungeon.boss.p3.autop3.AutoP3;
 import com.ricedotwho.rsa.module.impl.dungeon.boss.p3.terminals.auto.AutoTerms;
@@ -33,140 +22,148 @@ import com.ricedotwho.rsa.module.impl.dungeon.device.Auto4;
 import com.ricedotwho.rsa.module.impl.dungeon.device.AutoSS;
 import com.ricedotwho.rsa.module.impl.dungeon.puzzle.Puzzles;
 import com.ricedotwho.rsa.module.impl.movement.VelocityBuffer;
-import com.ricedotwho.rsa.module.impl.other.AntiCheat;
-import com.ricedotwho.rsa.module.impl.other.AutoGfs;
-import com.ricedotwho.rsa.module.impl.other.AutoJax;
-import com.ricedotwho.rsa.module.impl.other.CustomKeybinds;
-import com.ricedotwho.rsa.module.impl.other.DevUtils;
+import com.ricedotwho.rsa.module.impl.other.*;
 import com.ricedotwho.rsa.module.impl.player.BonzoHelper;
 import com.ricedotwho.rsa.module.impl.player.CancelInteract;
-import com.ricedotwho.rsa.module.impl.render.EffectsAndRender;
-import com.ricedotwho.rsa.module.impl.render.Esp;
-import com.ricedotwho.rsa.module.impl.render.Freecam;
-import com.ricedotwho.rsa.module.impl.render.HidePlayers;
-import com.ricedotwho.rsa.module.impl.render.PresetWaypoints;
+import com.ricedotwho.rsa.module.impl.player.autopet.AutoPet;
+import com.ricedotwho.rsa.module.impl.render.*;
 import com.ricedotwho.rsa.packet.sb.BloodClipHelperStartPacket;
 import com.ricedotwho.rsa.packet.sb.BloodClipHelperStopPacket;
 import com.ricedotwho.rsa.utils.render3d.type.Ring;
 import com.ricedotwho.rsm.addon.Addon;
 import com.ricedotwho.rsm.command.Command;
+import com.ricedotwho.rsm.command.api.CommandInfo;
 import com.ricedotwho.rsm.component.api.ModComponent;
 import com.ricedotwho.rsm.component.impl.Renderer3D;
+import com.ricedotwho.rsm.event.api.SubscribeEvent;
 import com.ricedotwho.rsm.module.Module;
+import com.ricedotwho.rsm.module.api.ModuleInfo;
 import com.ricedotwho.rsm.utils.ChatUtils;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
+import io.github.classgraph.ClassGraph;
+import io.github.classgraph.ScanResult;
+import lombok.Getter;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.util.Formatting;
-import net.minecraft.text.Text;
-import net.minecraft.text.MutableText;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
 public class RSA implements Addon {
-   private static final Logger logger = LogManager.getLogger("rsa");
-   public static Path SOUNDS_FOLDER;
-   private static final MutableText prefix = Text.empty()
-      .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
-      .append(Text.literal("R").withColor(11690975))
-      .append(Text.literal("S").withColor(12942314))
-      .append(Text.literal("A").withColor(14128116))
-      .append(Text.literal("] ").formatted(Formatting.DARK_GRAY));
 
-   public void onInitialize() {
-      PayloadTypeRegistry.playC2S().register(BloodClipHelperStartPacket.TYPE, BloodClipHelperStartPacket.CODEC);
-      PayloadTypeRegistry.playC2S().register(BloodClipHelperStopPacket.TYPE, BloodClipHelperStopPacket.CODEC);
-      EffectsAndRender.init();
-      Renderer3D.registerLine(Ring.class);
-      SOUNDS_FOLDER = FabricLoader.getInstance().getConfigDir().resolve("rsm").resolve("sounds");
+    @Getter
+    public static boolean notInTestEnv;
+    @Getter
+    private static final Logger logger = LogManager.getLogger("rsa");
+    public static Path SOUNDS_FOLDER;
+    @Getter
+    private static final MutableComponent prefix = Component.empty()
+            .append(Component.literal("[").withStyle(ChatFormatting.DARK_GRAY))
+            .append(Component.literal("R").withColor(0xB263DF))
+            .append(Component.literal("S").withColor(0xC57BEA))
+            .append(Component.literal("A").withColor(0xD793F4))
+            .append(Component.literal("] ").withStyle(ChatFormatting.DARK_GRAY));
 
-      try {
-         Files.createDirectories(SOUNDS_FOLDER);
-      } catch (Exception var2) {
-         var2.printStackTrace();
-      }
-   }
+    @Override
+    public void onInitialize() {
+        // todo: auth prob
 
-   public void onUnload() {
-   }
+        // packet reg
+        PayloadTypeRegistry.playC2S().register(BloodClipHelperStartPacket.TYPE, BloodClipHelperStartPacket.CODEC);
+        PayloadTypeRegistry.playC2S().register(BloodClipHelperStopPacket.TYPE, BloodClipHelperStopPacket.CODEC);
 
-   public List<Class<? extends Module>> getModules() {
-      return List.of(
-         DungeonBreaker.class,
-         AutoRoutes.class,
-         DynamicRoutes.class,
-         AutoJax.class,
-         PadTimer.class,
-         BloodBlink.class,
-         AutoSS.class,
-         SecretAura.class,
-         EffectsAndRender.class,
-         PresetWaypoints.class,
-         CustomKeybinds.class,
-         AutoGfs.class,
-         AutoTerms.class,
-         InstaMid.class,
-         SecretHitboxes.class,
-         CancelInteract.class,
-         DevUtils.class,
-         CancelInteract.class,
-         TermAura.class,
-         Esp.class,
-         AlignAura.class,
-         FastLeap.class,
-         AntiCheat.class,
-         Puzzles.class,
-         HidePlayers.class,
-         Auto4.class,
-         BonzoHelper.class,
-         AutoCroesus.class,
-         AutoP3.class,
-         Freecam.class,
-         AutoUlt.class,
-         TerminalSolver.class,
-         Relics.class,
-         VelocityBuffer.class,
-         BreakerAura.class,
-         Blink.class
-      );
-   }
+        EffectsAndRender.init();
 
-   public List<Class<? extends ModComponent>> getComponents() {
-      return List.of(Edge.class, Jump.class);
-   }
+        Renderer3D.registerLine(Ring.class);
 
-   public List<Class<? extends Command>> getCommands() {
-      return List.of(
-         RouteCommand.class,
-         DynamicRouteCommand.class,
-         BloodBlinkCommand.class,
-         BBGCommand.class,
-         RSADevCommand.class,
-         AutoCroesusCommand.class,
-         SecretAuraCommand.class,
-         VelocityBufferCommand.class
-      );
-   }
+        SOUNDS_FOLDER = FabricLoader.getInstance()
+                .getConfigDir()
+                .resolve("rsm")
+                .resolve("sounds");
 
-   public static void chat(Object message, Object... objects) {
-      ChatUtils.chatClean(getPrefix().copy().append(String.format(message.toString(), objects)));
-   }
+        try {
+            Files.createDirectories(SOUNDS_FOLDER);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
-   public static void chat(String text) {
-      ChatUtils.chatClean(getPrefix().copy().append(text));
-   }
+        //server check
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            ClientPacketListener conn = client.getConnection();
+            if (conn == null) {
+                notInTestEnv = true;
+                return;
+            }
+            String address = conn.getConnection().getRemoteAddress().toString();
+            boolean isTestServer = address.contains("hypixelp3sim.zapto.org");
+            boolean isSingleplayer = client.hasSingleplayerServer();
+            notInTestEnv = !isTestServer && !isSingleplayer;
+        });
+    }
 
-   public static void chat(Text component) {
-      ChatUtils.chatClean(getPrefix().copy().append(component));
-   }
+    @Override
+    public void onUnload() {
+        // this will never run
+    }
 
-   public static Logger getLogger() {
-      return logger;
-   }
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<Class<? extends Module>> getModules() {
+        try (ScanResult result = new ClassGraph()
+                .acceptPackages("com.ricedotwho.rsa")
+                .enableAnnotationInfo()
+                .scan()) {
+            return (List<Class<? extends Module>>) (List<?>) result
+                    .getClassesWithAnnotation(ModuleInfo.class)
+                    .loadClasses(Module.class);
+        }
+    }
 
-   public static MutableText getPrefix() {
-      return prefix;
-   }
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<Class<? extends ModComponent>> getComponents() {
+        try (ScanResult result = new ClassGraph()
+                .acceptPackages("com.ricedotwho.rsa")
+                .enableAnnotationInfo()
+                .enableMethodInfo()
+                .scan()) {
+            return (List<Class<? extends ModComponent>>) (List<?>) result
+                    .getSubclasses(ModComponent.class)
+                    .filter(info -> info.hasMethodAnnotation(SubscribeEvent.class))
+                    .loadClasses(ModComponent.class);
+        }
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<Class<? extends Command>> getCommands() {
+        try (ScanResult result = new ClassGraph()
+                .acceptPackages("com.ricedotwho.rsa")
+                .enableAnnotationInfo()
+                .scan()) {
+            return (List<Class<? extends Command>>) (List<?>) result
+                    .getClassesWithAnnotation(CommandInfo.class)
+                    .loadClasses(Command.class);
+        }
+    }
+
+    public static void chat(Object message, Object ... objects) {
+        ChatUtils.chatClean(getPrefix().copy().append(String.format(message.toString(), objects)));
+    }
+
+    public static void chat(String text) {
+        ChatUtils.chatClean(getPrefix().copy().append(text));
+    }
+
+    public static void chat(Component component) {
+        ChatUtils.chatClean(getPrefix().copy().append(component));
+    }
+
 }

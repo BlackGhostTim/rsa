@@ -1,27 +1,25 @@
 package com.ricedotwho.rsa.packet.sb;
 
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.util.Identifier;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload.Id;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.NotNull;
 
-public record BloodClipHelperStopPacket() implements CustomPayload {
-   public static final PacketCodec<PacketByteBuf, BloodClipHelperStopPacket> CODEC = CustomPayload.codecOf(
-      BloodClipHelperStopPacket::write, BloodClipHelperStopPacket::new
-   );
-   public static final Id<BloodClipHelperStopPacket> TYPE = new Id(Identifier.of("zero", "bloodcliphelper/stop"));
+public record BloodClipHelperStopPacket() implements CustomPacketPayload {
+    public static final StreamCodec<FriendlyByteBuf, BloodClipHelperStopPacket> CODEC = CustomPacketPayload.codec(BloodClipHelperStopPacket::write, BloodClipHelperStopPacket::new);
+    public static final Type<BloodClipHelperStopPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("zero", "bloodcliphelper/stop"));
 
-   public BloodClipHelperStopPacket(PacketByteBuf buf) {
-      this();
-   }
+    public BloodClipHelperStopPacket(FriendlyByteBuf buf) {
+        this();
+    }
 
-   public void write(PacketByteBuf buf) {
-   }
+    public void write(FriendlyByteBuf buf) {
 
-   @NotNull
-   public Id<BloodClipHelperStopPacket> getId() {
-      return TYPE;
-   }
+    }
+
+    @Override
+    public @NotNull Type<BloodClipHelperStopPacket> type() {
+        return TYPE;
+    }
 }

@@ -1,61 +1,62 @@
 package com.ricedotwho.rsa.component.impl.pathfinding;
 
-import com.mojang.datafixers.util.Function5;
+import com.mojang.datafixers.util.Function7;
+import net.minecraft.core.BlockPos;
+
 import java.util.function.Consumer;
-import net.minecraft.util.math.BlockPos;
 
 public class Path {
-   private final BlockPos start;
-   private final PathNode startNode;
-   private final PathNode endNode;
-   private final Goal goal;
+    private final BlockPos start;
+    private final PathNode startNode;
+    private final PathNode endNode;
+    private final Goal goal;
 
-   public Path(BlockPos start, PathNode startNode, PathNode endNode, Goal goal) {
-      this.start = start;
-      this.startNode = startNode;
-      this.endNode = endNode;
-      this.goal = goal;
-   }
+    public Path(BlockPos start, PathNode startNode, PathNode endNode, Goal goal) {
+        this.start = start;
+        this.startNode = startNode;
+        this.endNode = endNode;
+        this.goal = goal;
+    }
 
-   public BlockPos getStart() {
-      return this.start;
-   }
+    public BlockPos getStart() {
+        return start;
+    }
 
-   public PathNode getStartNode() {
-      return this.startNode;
-   }
+    public PathNode getStartNode() {
+        return startNode;
+    }
 
-   public PathNode getEndNode() {
-      return this.endNode;
-   }
+    public PathNode getEndNode() {
+        return endNode;
+    }
 
-   public int length() {
-      int count = 0;
+    public int length() {
+        int count = 0;
+        PathNode node = endNode;
+        while (node.getParent() != null) {
+            count++;
+            node = node.getParent();
+        }
+        return count;
+    }
 
-      for (PathNode node = this.endNode; node.getParent() != null; node = node.getParent()) {
-         count++;
-      }
+    public<T> int consumeNodes(Consumer<T> consumer, Function7<Integer, Float, Integer, Float, Float, Boolean, Integer, T> provider, int sequenceStart) {
+        PathNode node = this.getEndNode();
+        PathNode last = null;
+        boolean isLast = true;
 
-      return count;
-   }
+        while (node != null) {
+            if (last != null) {
+                consumer.accept(provider.apply(node.getX(), node.getY(), node.getZ(), last.getYaw(), last.getPitch(), isLast, sequenceStart++));
+                isLast = false;
+            }
+            last = node;
+            node = node.getParent();
+        }
+        return sequenceStart;
+    }
 
-   public <T> int consumeNodes(Consumer<T> consumer, Function5<BlockPos, Float, Float, Boolean, Integer, T> provider, int sequenceStart) {
-      PathNode node = this.getEndNode();
-      PathNode last = null;
-
-      for (boolean isLast = true; node != null; node = node.getParent()) {
-         if (last != null) {
-            consumer.accept((T)provider.apply(node.getPos(), last.getYaw(), last.getPitch(), isLast, sequenceStart++));
-            isLast = false;
-         }
-
-         last = node;
-      }
-
-      return sequenceStart;
-   }
-
-   public Goal getGoal() {
-      return this.goal;
-   }
+    public Goal getGoal() {
+        return goal;
+    }
 }

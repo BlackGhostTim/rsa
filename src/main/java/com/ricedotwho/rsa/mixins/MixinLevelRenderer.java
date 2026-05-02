@@ -1,36 +1,27 @@
 package com.ricedotwho.rsa.mixins;
 
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.ricedotwho.rsa.module.impl.dungeon.SecretHitboxes;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.block.BlockState;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.client.render.WorldRenderer;
-import org.spongepowered.asm.mixin.Final;
+import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.state.LevelRenderState;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
-@Mixin(WorldRenderer.class)
+@Mixin(value = LevelRenderer.class)
 public class MixinLevelRenderer {
-   @Shadow
-   private ClientWorld world;
-   @Shadow
-   @Final
-   private MinecraftClient client;
 
-   @ModifyVariable(method = "fillEntityOutlineRenderStates", at = @At(value = "STORE", ordinal = 0), ordinal = 0)
-   private VoxelShape extractBlockOutline(VoxelShape original) {
-      if (this.world == null || !(this.client.crosshairTarget instanceof BlockHitResult hit)) {
-         return original;
-      } else {
-         BlockPos blockPos = hit.getBlockPos();
-         BlockState state = this.world.getBlockState(blockPos);
-         VoxelShape shape = SecretHitboxes.getShape(state, blockPos);
-         return shape != null ? shape : original;
-      }
-   }
+    @ModifyExpressionValue(method = "extractBlockOutline(Lnet/minecraft/client/Camera;Lnet/minecraft/client/renderer/state/LevelRenderState;)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/block/state/BlockState;getShape(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/phys/shapes/CollisionContext;)Lnet/minecraft/world/phys/shapes/VoxelShape;"))
+    private VoxelShape modifyOutlineShape(VoxelShape original, Camera camera, LevelRenderState levelRenderState) {
+        BlockHitResult hit = (BlockHitResult) Minecraft.getInstance().hitResult;
+        BlockPos pos = hit.getBlockPos();
+        BlockState state = Minecraft.getInstance().level.getBlockState(pos);
+        VoxelShape shape = SecretHitboxes.getShape(state, pos);
+        return shape != null ? shape : original;
+    }
 }

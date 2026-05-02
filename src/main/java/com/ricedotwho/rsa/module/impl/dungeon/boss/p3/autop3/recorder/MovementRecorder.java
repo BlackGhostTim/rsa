@@ -2,276 +2,233 @@ package com.ricedotwho.rsa.module.impl.dungeon.boss.p3.autop3.recorder;
 
 import com.google.common.reflect.TypeToken;
 import com.google.gson.GsonBuilder;
+import com.mojang.blaze3d.platform.InputConstants;
 import com.ricedotwho.rsa.component.impl.managers.PacketOrderManager;
 import com.ricedotwho.rsa.component.impl.managers.SwapManager;
 import com.ricedotwho.rsa.module.impl.dungeon.boss.p3.autop3.AutoP3;
 import com.ricedotwho.rsm.data.Keybind;
 import com.ricedotwho.rsm.event.api.SubscribeEvent;
 import com.ricedotwho.rsm.event.impl.client.InputPollEvent;
-import com.ricedotwho.rsm.event.impl.client.PacketEvent.Send;
-import com.ricedotwho.rsm.event.impl.world.WorldEvent.Load;
+import com.ricedotwho.rsm.event.impl.client.PacketEvent;
+import com.ricedotwho.rsm.event.impl.world.WorldEvent;
 import com.ricedotwho.rsm.module.SubModule;
 import com.ricedotwho.rsm.module.api.SubModuleInfo;
-import com.ricedotwho.rsm.ui.clickgui.settings.Setting;
 import com.ricedotwho.rsm.ui.clickgui.settings.impl.ButtonSetting;
 import com.ricedotwho.rsm.ui.clickgui.settings.impl.KeybindSetting;
 import com.ricedotwho.rsm.ui.clickgui.settings.impl.SaveSetting;
 import com.ricedotwho.rsm.utils.ItemUtils;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
+import net.minecraft.world.entity.player.Input;
+import net.minecraft.world.item.ItemStack;
+
 import java.util.ArrayList;
 import java.util.List;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket;
-import net.minecraft.client.util.InputUtil;
 
 @SubModuleInfo(name = "Movement")
 public class MovementRecorder extends SubModule<AutoP3> {
-   private final KeybindSetting recordKey = new KeybindSetting("Record", new Keybind(InputUtil.UNKNOWN_KEY, this::toggleRecording));
-   private final ButtonSetting prune = new ButtonSetting("Prune Inputs", "Prune", this::prune);
-   private static final SaveSetting<List<MovementRecorder.PlayerInput>> data = new SaveSetting(
-      "Route",
-      "dungeon/recorder",
-      "inputs.json",
-      ArrayList::new,
-      (new TypeToken<List<MovementRecorder.PlayerInput>>() {}).getType(),
-      new GsonBuilder().registerTypeHierarchyAdapter(MovementRecorder.PlayerInput.class, new PlayerInputAdapter()).setPrettyPrinting().create(),
-      true,
-      null,
-      null
-   );
-   private static MovementRecorder.State state = MovementRecorder.State.IDLE;
-   private static final List<MovementRecorder.PlayerInput> recorded = new ArrayList<>();
-   private static int playIndex = 0;
+    private final KeybindSetting recordKey = new KeybindSetting("Record", new Keybind(InputConstants.UNKNOWN, this::toggleRecording));
+    private final ButtonSetting prune = new ButtonSetting("Prune Inputs", "Prune", this::prune);
+    @Getter
+    private static final SaveSetting<List<PlayerInput>> data = new SaveSetting<>("Route", "dungeon/recorder", "inputs.json", ArrayList::new,
+            new TypeToken<List<PlayerInput>>() {}.getType(),
+            new GsonBuilder()
+                    .registerTypeHierarchyAdapter(PlayerInput.class, new PlayerInputAdapter())
+                    .setPrettyPrinting().create(),
+            true, null, null);
 
-   public MovementRecorder(AutoP3 module) {
-      super(module);
-      this.registerProperty(new Setting[]{this.recordKey, this.prune, data});
-   }
+    private static State state = State.IDLE;
+    private static final List<PlayerInput> recorded = new ArrayList<>();
+    @Setter
+    @Getter
+    private static int playIndex = 0;
 
-   public void reset() {
-      playIndex = 0;
-      recorded.clear();
-      state = MovementRecorder.State.IDLE;
-   }
+    public MovementRecorder(AutoP3 module) {
+        super(module);
+        registerProperty(recordKey, prune, data);
+    }
 
-   @SubscribeEvent
-   public void onWorldLoad(Load event) {
-      this.reset();
-   }
+    @Override
+    public void reset() {
+        playIndex = 0;
+        recorded.clear();
+        state = State.IDLE;
+    }
 
-   private void toggleRecording() {
-      switch (state) {
-         case RECORDING:
-            state = MovementRecorder.State.IDLE;
-            data.setValue(recorded);
-            data.save();
-            AutoP3.modMessage("Saved %s tick recording to \"%s.%s\"", recorded.size(), data.getFileName(), data.getExt());
-         case PAUSED:
-         default:
-            break;
-         case PLAYING:
-            AutoP3.modMessage("Cannot record while playing!");
-            break;
-         case IDLE:
-            recorded.clear();
-            state = MovementRecorder.State.RECORDING;
-            AutoP3.modMessage("Started recording!");
-      }
-   }
+    @SubscribeEvent
+    public void onWorldLoad(WorldEvent.Load event) {
+        reset();
+    }
 
-   private void prune() {
-      List<MovementRecorder.PlayerInput> inputs = (List<MovementRecorder.PlayerInput>)data.getValue();
+    private void toggleRecording() {
+        switch (state) {
+            case RECORDING -> {
+                state = State.IDLE;
+                data.setValue(recorded);
+                data.save();
+                AutoP3.modMessage("Saved %s tick recording to \"%s.%s\"", recorded.size(), data.getFileName(), data.getExt());
+            }
+            case IDLE -> {
+                recorded.clear();
+                state = State.RECORDING;
+                AutoP3.modMessage("Started recording!");
+            }
+            case PLAYING -> AutoP3.modMessage("Cannot record while playing!");
+        }
+    }
 
-      int changed;
-      for (changed = 0; inputs.size() > 1 && inputs.get(0).equals(inputs.get(1)); changed++) {
-         inputs.remove(1);
-      }
+    public static boolean isIdle() {
+        return state == State.IDLE;
+    }
+    private void prune() {
+        List<PlayerInput> inputs = data.getValue();
+        int changed = 0;
+        while (inputs.size() > 1 && inputs.get(0).equals(inputs.get(1))) {
+            inputs.remove(1);
+            changed++;
+        }
 
-      while (inputs.size() > 1 && inputs.getLast().equals(inputs.get(inputs.size() - 2))) {
-         inputs.removeLast();
-         changed++;
-      }
+        while (inputs.size() > 1 &&
+                inputs.getLast().equals(inputs.get(inputs.size() - 2))) {
+            inputs.removeLast();
+            changed++;
+        }
+        data.save();
+        AutoP3.modMessage("Removed %s ticks", changed);
+    }
 
-      data.save();
-      AutoP3.modMessage("Removed %s ticks", changed);
-   }
+    @SubscribeEvent
+    public void onPacket(PacketEvent.Send event) {
+        if (state != State.RECORDING || mc.player == null || !(event.getPacket() instanceof ServerboundUseItemPacket packet) || recorded.isEmpty()) return;
+        ItemStack held = mc.player.getItemInHand(packet.getHand());
+        String itemId = ItemUtils.getID(held);
+        if (itemId.isBlank() || packet.getYRot() == 0.0 && packet.getXRot() == 0.0) return;
+        PlayerInput last = recorded.getLast();
+        last.using = true;
+        last.useItem = new UseItem(itemId, packet.getYRot(), packet.getXRot());
+    }
 
-   @SubscribeEvent
-   public void onPacket(Send event) {
-      if (state == MovementRecorder.State.RECORDING && mc.player != null && event.getPacket() instanceof PlayerInteractItemC2SPacket packet && !recorded.isEmpty()) {
-         ItemStack held = mc.player.getStackInHand(packet.getHand());
-         String itemId = ItemUtils.getID(held);
-         if (!itemId.isBlank() && (packet.getYaw() != 0.0 || packet.getPitch() != 0.0)) {
-            MovementRecorder.PlayerInput last = recorded.getLast();
-            last.using = true;
-            last.useItem = new MovementRecorder.UseItem(itemId, packet.getYaw(), packet.getPitch());
-         }
-      }
-   }
-
-   @SubscribeEvent
-   public void record(InputPollEvent event) {
-      if (mc.player != null) {
-         net.minecraft.util.PlayerInput in = event.getClientInput();
-         if (state == MovementRecorder.State.RECORDING) {
-            MovementRecorder.PlayerInput next = new MovementRecorder.PlayerInput(
-               mc.gameRenderer.getCamera().getCameraYaw(), mc.gameRenderer.getCamera().getPitch(), in
-            );
+    @SubscribeEvent
+    public void record(InputPollEvent event) {
+        if (mc.player == null) return;
+        if (!event.isActualLocalPlayer() && state == State.PLAYING) {
+            event.getInput().forward(true);
+            event.getInput().left(true);
+            event.getInput().jump(true);
+            return;
+        }
+        Input in = event.getClientInput();
+        if (state == State.RECORDING) {
+            PlayerInput next = new PlayerInput(mc.gameRenderer.getMainCamera().yaw(), mc.gameRenderer.getMainCamera().getXRot(), in);
             recorded.add(next);
-         } else if (state == MovementRecorder.State.PLAYING) {
-            if (in.forward() || in.backward() || in.left() || in.right() || in.sneak()) {
-               AutoP3.modMessage("Cancelling movement");
-               this.reset();
-               return;
+        } else if (state == State.PLAYING) {
+            if (in.forward() || in.backward() || in.left() || in.right() || in.shift()) {
+                AutoP3.modMessage("Cancelling movement");
+                reset();
+                return;
             }
 
-            List<MovementRecorder.PlayerInput> inputs = (List<MovementRecorder.PlayerInput>)data.getValue();
+            List<PlayerInput> inputs = data.getValue();
             if (playIndex >= inputs.size()) {
-               state = MovementRecorder.State.IDLE;
-               AutoP3.modMessage("Done playing %s", data.getFileName());
-               return;
+                state = State.IDLE;
+                AutoP3.modMessage("Done playing %s", data.getFileName());
+                return;
             }
-
-            MovementRecorder.PlayerInput next = inputs.get(playIndex);
+            PlayerInput next = inputs.get(playIndex);
             event.getInput().apply(next.input());
-            mc.player.setYaw(next.yaw);
-            mc.player.setPitch(next.pitch);
-            if (next.using && next.useItem != null && SwapManager.swapItem(next.useItem.item)) {
-               PacketOrderManager.register(
-                  PacketOrderManager.STATE.ITEM_USE, () -> SwapManager.sendAirC08(next.useItem.yaw, next.useItem.pitch, SwapManager.isDesynced(), false)
-               );
+            mc.player.setYRot(next.yaw);
+            mc.player.setXRot(next.pitch);
+
+            if (next.using && next.useItem != null) {
+                if (SwapManager.swapItem(next.useItem.item)) {
+                    PacketOrderManager.register(PacketOrderManager.STATE.ITEM_USE, () -> SwapManager.sendAirC08(next.useItem.yaw, next.useItem.pitch, SwapManager.isDesynced(), false));
+                }
             }
-
             playIndex++;
-         }
-      }
-   }
+        }
+    }
 
-   public static void resumeRecording() {
-      if (state == MovementRecorder.State.PAUSED) {
-         state = MovementRecorder.State.PLAYING;
-      }
+    public static void resumeRecording() {
+        if (state == State.PAUSED) state = State.PLAYING;
+        if (data.getValue() == null || playIndex >= data.getValue().size() || data.getValue().get(playIndex) == null) return;
+        PlayerInput next = data.getValue().get(playIndex);
+        mc.player.setYRot(next.yaw);
+        mc.player.setXRot(next.pitch);
+    }
 
-      if (data.getValue() != null && playIndex < ((List)data.getValue()).size() && ((List)data.getValue()).get(playIndex) != null) {
-         MovementRecorder.PlayerInput next = (MovementRecorder.PlayerInput)((List)data.getValue()).get(playIndex);
-         mc.player.setYaw(next.yaw);
-         mc.player.setPitch(next.pitch);
-      }
-   }
+    public static void pauseRecording() {
+        if (state == State.PLAYING) state = State.PAUSED;
+    }
 
-   public static void pauseRecording() {
-      if (state == MovementRecorder.State.PLAYING) {
-         state = MovementRecorder.State.PAUSED;
-      }
-   }
-
-   public static void playRecording(String name) {
-      if (state != MovementRecorder.State.IDLE && state != MovementRecorder.State.PAUSED) {
-         AutoP3.modMessage("Cannot start playing while not idle! State: %s", state);
-      } else {
-         playIndex = 0;
-         data.setFileName(name);
-         data.updateFile();
-         data.load();
-         if (((List)data.getValue()).isEmpty()) {
+    public static void playRecording(String name) {
+        if (state != State.IDLE && state != State.PAUSED) {
+            AutoP3.modMessage("Cannot start playing while not idle! State: %s", state);
+            return;
+        }
+        playIndex = 0;
+        data.setFileName(name);
+        data.updateFile();
+        data.load();
+        if (data.getValue().isEmpty()) {
             AutoP3.modMessage("Cannot play empty recording!");
-         } else {
-            state = MovementRecorder.State.PLAYING;
-         }
-      }
-   }
+            return;
+        }
+        state = State.PLAYING;
+    }
 
-   public static SaveSetting<List<MovementRecorder.PlayerInput>> getData() {
-      return data;
-   }
 
-   public static class PlayerInput {
-      public final float yaw;
-      public final float pitch;
-      public boolean using = false;
-      public MovementRecorder.UseItem useItem = null;
-      public final boolean forward;
-      public final boolean back;
-      public final boolean left;
-      public final boolean right;
-      public final boolean jump;
-      public final boolean sneak;
-      public final boolean sprint;
+    public static List<PlayerInput> getInputs(String name) {
+        data.setFileName(name);
+        data.updateFile();
+        data.load();
+        return data.getValue();
+    }
 
-      public PlayerInput(float yaw, float pitch, net.minecraft.util.PlayerInput in) {
-         this(yaw, pitch, in.forward(), in.backward(), in.left(), in.right(), in.jump(), in.sneak(), in.sprint());
-      }
+    private enum State {
+        RECORDING,
+        PAUSED,
+        PLAYING,
+        IDLE
+    }
 
-      public net.minecraft.util.PlayerInput input() {
-         return new net.minecraft.util.PlayerInput(this.forward, this.back, this.left, this.right, this.jump, this.sneak, this.sprint);
-      }
+    @AllArgsConstructor
+    @RequiredArgsConstructor
+    public static class PlayerInput {
+        public final float yaw;
+        public final float pitch;
+        public boolean using = false;
+        public UseItem useItem = null;
+        public final boolean forward;
+        public final boolean back;
+        public final boolean left;
+        public final boolean right;
+        public final boolean jump;
+        public final boolean sneak;
+        public final boolean sprint;
 
-      public boolean equals(MovementRecorder.PlayerInput other) {
-         return this.yaw == other.yaw
-            && this.pitch == other.pitch
-            && this.forward == other.forward
-            && this.back == other.back
-            && this.left == other.left
-            && this.right == other.right
-            && this.jump == other.jump
-            && this.sneak == other.sneak
-            && this.sprint == other.sprint;
-      }
+        public PlayerInput(float yaw, float pitch, Input in) {
+            this(yaw, pitch, in.forward(), in.backward(), in.left(), in.right(), in.jump(), in.shift(), in.sprint());
+        }
 
-      public PlayerInput(
-         float yaw,
-         float pitch,
-         boolean using,
-         MovementRecorder.UseItem useItem,
-         boolean forward,
-         boolean back,
-         boolean left,
-         boolean right,
-         boolean jump,
-         boolean sneak,
-         boolean sprint
-      ) {
-         this.yaw = yaw;
-         this.pitch = pitch;
-         this.using = using;
-         this.useItem = useItem;
-         this.forward = forward;
-         this.back = back;
-         this.left = left;
-         this.right = right;
-         this.jump = jump;
-         this.sneak = sneak;
-         this.sprint = sprint;
-      }
+        public Input input() {
+            return new Input(this.forward, this.back, this.left, this.right, this.jump, this.sneak, this.sprint);
+        }
 
-      public PlayerInput(float yaw, float pitch, boolean forward, boolean back, boolean left, boolean right, boolean jump, boolean sneak, boolean sprint) {
-         this.yaw = yaw;
-         this.pitch = pitch;
-         this.forward = forward;
-         this.back = back;
-         this.left = left;
-         this.right = right;
-         this.jump = jump;
-         this.sneak = sneak;
-         this.sprint = sprint;
-      }
-   }
-
-   private static enum State {
-      RECORDING,
-      PAUSED,
-      PLAYING,
-      IDLE;
-   }
-
-   public static class UseItem {
-      public String item;
-      public float yaw;
-      public float pitch;
-
-      public UseItem(String item, float yaw, float pitch) {
-         this.item = item;
-         this.yaw = yaw;
-         this.pitch = pitch;
-      }
-   }
+        public boolean equals(PlayerInput other) {
+            return this.yaw == other.yaw && this.pitch == other.pitch
+                    && this.forward == other.forward && this.back == other.back
+                    && this.left == other.left && this.right == other.right
+                    && this.jump == other.jump && this.sneak == other.sneak
+                    && this.sprint == other.sprint;
+        }
+    }
+    @AllArgsConstructor
+    public static class UseItem {
+        public String item;
+        public float yaw;
+        public float pitch;
+    }
 }

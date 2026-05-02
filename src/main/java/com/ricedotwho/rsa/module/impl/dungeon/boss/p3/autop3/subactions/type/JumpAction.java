@@ -6,22 +6,20 @@ import com.ricedotwho.rsa.module.impl.dungeon.boss.p3.autop3.subactions.SubActio
 import com.ricedotwho.rsa.module.impl.dungeon.boss.p3.autop3.subactions.SubActionType;
 
 public class JumpAction extends SubAction {
-   public JumpAction() {
-      super(SubActionType.JUMP);
-   }
 
-   @Override
-   public boolean execute() {
-      if (mc.player != null && mc.player.isOnGround()) {
-         Jump.jump();
-         return true;
-      } else {
-         return false;
-      }
-   }
+    public JumpAction() {
+        super(SubActionType.JUMP);
+    }
 
-   @Override
-   public void serialize(JsonObject obj) {
-      obj.addProperty(this.getType().name(), true);
-   }
+    @Override
+    public boolean execute() {
+        if (mc.player == null || !mc.player.onGround()) return false;
+        Jump.jump();
+        return true;
+    }
+
+    @Override
+    public void serialize(JsonObject obj) {
+        obj.addProperty(this.getType().name(), true);
+    }
 }

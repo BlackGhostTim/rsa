@@ -3,22 +3,27 @@ package com.ricedotwho.rsa.component.impl.pathfinding;
 import java.util.HashMap;
 
 public class CachedPath extends Path {
-   HashMap<Integer, PathNode> cache = new HashMap<>();
+    HashMap<Integer, PathNode> cache;
 
-   public CachedPath(PathNode endNode) {
-      super(null, null, endNode, null);
-      this.updateCache();
-   }
+    public CachedPath(PathNode endNode) {
+        super(null, null, endNode, null);
+        cache = new HashMap<>();
+        updateCache();
+    }
 
-   public void updateCache() {
-      this.cache.clear();
+    public void updateCache() {
+        cache.clear();
 
-      for (PathNode node = this.getEndNode(); node != null; node = node.getParent()) {
-         this.cache.put(node.getIndex(), node);
-      }
-   }
+        PathNode node = getEndNode();
+        while (node != null) {
+            cache.put(node.getIndex(), node);
+            node = node.getParent();
+        }
+    }
 
-   public PathNode getByIndex(int index) {
-      return this.cache.get(index);
-   }
+    public PathNode getByIndex(int index) {
+        return cache.get(index);
+    }
+
+
 }

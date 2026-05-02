@@ -1,139 +1,126 @@
 package com.ricedotwho.rsa.module.impl.dungeon.boss.p3.terminals.auto.terminals;
 
 import com.ricedotwho.rsa.RSA;
+import lombok.Getter;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
+import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+
 import java.util.List;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.s2c.play.ScreenHandlerSlotUpdateS2CPacket;
-import net.minecraft.screen.ScreenHandlerType;
-import net.minecraft.network.packet.s2c.play.OpenScreenS2CPacket;
-import net.minecraft.component.DataComponentTypes;
+
 
 public abstract class Terminal {
-   private final TerminalType type;
-   protected SolveState solveState;
-   private final String title;
-   private final int windowID;
-   protected final ScreenHandler terminalContainer;
-   protected Solution solution;
+    @Getter
+    private final TerminalType type;
 
-   protected Terminal(TerminalType type, OpenScreenS2CPacket packet, ScreenHandler terminalContainer) {
-      this.type = type;
-      this.windowID = packet.getSyncId();
-      this.title = packet.getName().getString();
-      this.solveState = SolveState.NOT_LOADED;
-      this.terminalContainer = terminalContainer;
-   }
+    @Getter
+    protected SolveState solveState;
 
-   public void loadSlot(ScreenHandlerSlotUpdateS2CPacket packet) {
-      if (packet.getSyncId() != this.getWindowID()) {
-         RSA.chat("Window ID slot load mismatch! -> term : " + this.getWindowID() + " packet : " + packet.getSyncId());
-      } else if (packet.getSlot() > this.type.getSlotCount()) {
-         if (this.solveState == SolveState.NOT_LOADED) {
-            this.solveState = SolveState.LOADED;
-         }
-      }
-   }
+    @Getter
+    private final String title;
+    @Getter
+    private final int windowID;
 
-   public abstract TerminalState getNextState();
+    protected final AbstractContainerMenu terminalContainer;
 
-   public abstract TerminalState getCurrentState();
+    @Getter
+    protected Solution solution;
 
-   protected static TerminalState getTerminalState(TerminalType type, List<Terminal.HashInfo> stacks) {
-      int hash = 1;
+    protected Terminal(TerminalType type, ClientboundOpenScreenPacket packet, AbstractContainerMenu terminalContainer) {
+        this.type = type;
+        this.windowID = packet.getContainerId();
+        this.title = packet.getTitle().getString();
+        this.solveState = SolveState.NOT_LOADED;
+        this.terminalContainer = terminalContainer;
+    }
 
-      for (int i = 0; i < stacks.size(); i++) {
-         Terminal.HashInfo stack = stacks.get(i);
-         hash = 31 * hash + stack.getItem();
-         hash = 31 * hash + stack.getSize();
-         hash = 31 * hash + (stack.isEnchanted() ? 1 : 0);
-      }
+    public void loadSlot(ClientboundContainerSetSlotPacket packet) {
+        if (packet.getContainerId() != this.getWindowID()) {
+            RSA.chat("Window ID slot load mismatch! -> term : " + this.getWindowID() + " packet : " + packet.getContainerId());
+            return;
+        }
 
-      return new TerminalState(type, hash);
-   }
+        if (packet.getSlot() == this.type.getSlotCount() - 1) {
+            if (this.solveState == SolveState.NOT_LOADED)
+                this.solveState = SolveState.LOADED;
+            return;
+        }
+    }
 
-   public boolean shouldSolve() {
-      return this.solveState != SolveState.NOT_LOADED;
-   }
+    public abstract TerminalState getNextState();
+    public abstract TerminalState getCurrentState();
 
-   public boolean isSolved() {
-      return this.solution != null && this.solveState != SolveState.NOT_LOADED;
-   }
+    protected static TerminalState getTerminalState(TerminalType type, List<HashInfo> stacks) {
+        int hash = 1;
+//        RSA.chat("Items Start!");
+        for (int i = 0; i < stacks.size(); i++) {
+            HashInfo stack = stacks.get(i);
 
-   public void solve() {
-      if (this.solveState == SolveState.NOT_LOADED) {
-         throw new IllegalStateException("Tried to solve incomplete terminal!");
-      }
-   }
+            hash = 31 * hash + stack.getItem();
+            hash = 31 * hash + stack.getSize();
+            hash = 31 * hash + (stack.isEnchanted() ? 1 : 0);
+//            RSA.chat(i + " : " + hash);
+        }
 
-   public static Terminal fromPacket(OpenScreenS2CPacket packet, ScreenHandler menu) {
-      ScreenHandlerType<?> menuType = packet.getScreenHandlerType();
-      return menuType != ScreenHandlerType.GENERIC_9X4 && menuType != ScreenHandlerType.GENERIC_9X5 && menuType != ScreenHandlerType.GENERIC_9X6
-         ? null
-         : findTerminalClass(packet, menu);
-   }
+        return new TerminalState(type, hash);
+    }
 
-   private static Terminal findTerminalClass(OpenScreenS2CPacket packet, ScreenHandler menu) {
-      TerminalType terminalType = TerminalType.getType(packet.getName().getString());
-      return terminalType == null ? null : terminalType.supply(packet, menu);
-   }
+    public boolean shouldSolve() {
+        return this.solveState != SolveState.NOT_LOADED;
+    }
 
-   public abstract boolean isEnabled();
+    public boolean isSolved() {
+        return this.solution != null && this.solveState != SolveState.NOT_LOADED;
+    }
 
-   public TerminalType getType() {
-      return this.type;
-   }
+    public void solve() {
+        if (this.solveState == SolveState.NOT_LOADED) throw new IllegalStateException("Tried to solve incomplete terminal!");
+    }
 
-   public SolveState getSolveState() {
-      return this.solveState;
-   }
 
-   public String getTitle() {
-      return this.title;
-   }
+    public static Terminal fromPacket(ClientboundOpenScreenPacket packet, AbstractContainerMenu menu) {
+        MenuType<?> menuType = packet.getType();
+        if (menuType != MenuType.GENERIC_9x4 && menuType != MenuType.GENERIC_9x5 && menuType != MenuType.GENERIC_9x6) return null;
+        return findTerminalClass(packet, menu);
+    }
 
-   public int getWindowID() {
-      return this.windowID;
-   }
 
-   public Solution getSolution() {
-      return this.solution;
-   }
+    private static Terminal findTerminalClass(ClientboundOpenScreenPacket packet, AbstractContainerMenu menu) {
+        TerminalType terminalType = TerminalType.getType(packet.getTitle().getString());
+        if (terminalType == null) return null;
+        return terminalType.supply(packet, menu);
+    }
 
-   protected static class HashInfo {
-      private boolean enchanted;
-      private int item;
-      private int size;
+    public abstract boolean isEnabled();
 
-      protected HashInfo(ItemStack stack) {
-         this.enchanted = stack.isEnchantable() || Boolean.TRUE.equals(stack.get(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE));
-         this.item = stack.getItem().hashCode();
-         this.size = stack.getCount();
-      }
+    protected static class HashInfo {
+        @Getter
+        private boolean enchanted;
+        @Getter
+        private int item;
+        @Getter
+        private int size;
 
-      protected void setEnchanted(boolean bl) {
-         this.enchanted = bl;
-      }
+        protected HashInfo(ItemStack stack) {
+            this.enchanted = stack.isEnchantable() || Boolean.TRUE.equals(stack.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE));
+            this.item = stack.getItem().hashCode();
+            this.size = stack.getCount();
+        }
 
-      protected void setItem(Item item) {
-         this.item = item.hashCode();
-      }
+        protected void setEnchanted(boolean bl) {
+            this.enchanted = bl;
+        }
 
-      protected void setSize(int size) {
-         this.size = size;
-      }
+        protected void setItem(Item item) {
+            this.item = item.hashCode(); // This is a hash code of the object pointer in memory, items all share the same base objects
+        }
 
-      public boolean isEnchanted() {
-         return this.enchanted;
-      }
-
-      public int getItem() {
-         return this.item;
-      }
-
-      public int getSize() {
-         return this.size;
-      }
-   }
+        protected void setSize(int size) {
+            this.size = size;
+        }
+    }
 }

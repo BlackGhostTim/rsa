@@ -1,14 +1,14 @@
 package com.ricedotwho.rsa.component.impl.pathfinding;
 
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.BlockPos.Mutable;
+import com.ricedotwho.rsm.data.Pos;
+import net.minecraft.world.phys.Vec3;
 
-public record PathfindingCalculationContext(Mutable startBlock, int threadCount, float yawStep, float pitchStep, float newNodeCost, float heuristicThreshold) {
-   public static PathfindingCalculationContext simple(BlockPos startBlock, int threadCount) {
-      return new PathfindingCalculationContext(startBlock.mutableCopy(), threadCount, 2.0F, 2.0F, 100.0F, 0.5F);
-   }
+public record PathfindingCalculationContext(Pos startPos, int threadCount, float yawStep, float pitchStep, float newNodeCost, float heuristicThreshold, boolean fullBlocks) {
+    public static PathfindingCalculationContext simple(Vec3 startPos, int threadCount) {
+        return new PathfindingCalculationContext(new Pos(startPos), threadCount, 2f, 2f, 100f, 0.5f, true);
+    }
 
-   public Mutable getMutableStart() {
-      return this.startBlock;
-   }
+    public Pos getMutableStart() {
+        return this.startPos;
+    }
 }

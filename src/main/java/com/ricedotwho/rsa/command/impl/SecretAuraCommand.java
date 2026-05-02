@@ -6,25 +6,32 @@ import com.ricedotwho.rsa.module.impl.dungeon.SecretAura;
 import com.ricedotwho.rsm.RSM;
 import com.ricedotwho.rsm.command.Command;
 import com.ricedotwho.rsm.command.api.CommandInfo;
-import net.minecraft.client.network.ClientCommandSource;
+import net.minecraft.client.multiplayer.ClientSuggestionProvider;
 
 @CommandInfo(name = "sa", aliases = "secretaura", description = "Developer")
 public class SecretAuraCommand extends Command {
-   public LiteralArgumentBuilder<ClientCommandSource> build() {
-      return (LiteralArgumentBuilder<ClientCommandSource>)((LiteralArgumentBuilder)literal(this.name()).then(literal("c").executes(ctx -> {
-         this.clear();
-         return 1;
-      }))).then(literal("clear").executes(ctx -> {
-         this.clear();
-         return 1;
-      }));
-   }
 
-   private void clear() {
-      SecretAura s = (SecretAura)RSM.getModule(SecretAura.class);
-      if (s != null) {
-         s.clear();
-         RSA.chat("Blocks cleared!");
-      }
-   }
+    @Override
+    public LiteralArgumentBuilder<ClientSuggestionProvider> build() {
+        return literal(name())
+                .then(literal("c")
+                        .executes(ctx -> {
+                            clear();
+                            return 1;
+                        })
+                )
+                .then(literal("clear")
+                        .executes(ctx -> {
+                            clear();
+                            return 1;
+                        })
+                );
+    }
+
+    private void clear() {
+        SecretAura s = RSM.getModule(SecretAura.class);
+        if (s == null) return;
+        s.clear();
+        RSA.chat("Blocks cleared!");
+    }
 }

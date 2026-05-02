@@ -1,19 +1,22 @@
 package com.ricedotwho.rsa.module.impl.dungeon.boss.p3.terminals.auto.terminals;
 
+import lombok.Getter;
+
 public class TerminalState {
-   private final TerminalType type;
-   private final int hash;
+    private final TerminalType type;
 
-   public TerminalState(TerminalType type, int hash) {
-      this.type = type;
-      this.hash = hash;
-   }
+    @Getter
+    private final int hash;
 
-   public boolean matches(TerminalState other) {
-      return this.type == other.type && this.hash == other.hash;
-   }
+    public TerminalState(TerminalType type, int hash) {
+        this.type = type;
+        this.hash = hash;
+    }
 
-   public int getHash() {
-      return this.hash;
-   }
+    public boolean matches(TerminalState other) {
+        return this.type == other.type && this.hash == other.hash;
+    }
+
+
+
 }

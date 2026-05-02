@@ -8,126 +8,133 @@ import com.ricedotwho.rsm.component.impl.camera.ClientRotationHandler;
 import com.ricedotwho.rsm.component.impl.camera.ClientRotationProvider;
 import com.ricedotwho.rsm.data.Pos;
 import com.ricedotwho.rsm.event.api.SubscribeEvent;
-import com.ricedotwho.rsm.event.impl.render.Render3DEvent.Start;
-import com.ricedotwho.rsm.event.impl.world.WorldEvent.Load;
+import com.ricedotwho.rsm.event.impl.render.Render3DEvent;
+import com.ricedotwho.rsm.event.impl.world.WorldEvent;
 import com.ricedotwho.rsm.module.Module;
 import com.ricedotwho.rsm.module.api.Category;
 import com.ricedotwho.rsm.module.api.ModuleInfo;
-import com.ricedotwho.rsm.ui.clickgui.settings.Setting;
 import com.ricedotwho.rsm.ui.clickgui.settings.impl.NumberSetting;
 import com.ricedotwho.rsm.utils.RotationUtils;
-import java.math.BigDecimal;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.math.Vec2f;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.GameOptions;
+import lombok.Getter;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Options;
+import net.minecraft.world.phys.Vec2;
+import net.minecraft.world.phys.Vec3;
 
+@Getter
 @ModuleInfo(aliases = "Freecam", id = "Freecam", category = Category.RENDER, hasKeybind = true)
 public class Freecam extends Module implements ClientRotationProvider, CameraPositionProvider {
-   private static final String ENABLE_MSG = "Freecam " + Formatting.GREEN + "enabled!";
-   private static final String DISABLE_MSG = "Freecam " + Formatting.RED + "disabled!";
-   private final NumberSetting horizontalSpeed = new NumberSetting("Horizontal Speed", 0.0, 1.0, 0.35, 0.05);
-   private final NumberSetting verticalSpeed = new NumberSetting("Vertical Speed", 0.0, 0.5, 0.25, 0.025);
-   private static Freecam INSTANCE;
-   private Pos freecamPos = new Pos();
+    private static final String ENABLE_MSG = "Freecam " + ChatFormatting.GREEN + "enabled!";
+    private static final String DISABLE_MSG = "Freecam " + ChatFormatting.RED + "disabled!";
 
-   public Freecam() {
-      this.registerProperty(new Setting[]{this.horizontalSpeed, this.verticalSpeed});
-   }
+    private final NumberSetting horizontalSpeed = new NumberSetting("Horizontal Speed", 0d, 1d, 0.35d, 0.05d);
+    private final NumberSetting verticalSpeed = new NumberSetting("Vertical Speed", 0d, 0.5d, 0.25d, 0.025d);
 
-   public void onEnable() {
-      RSA.chat(ENABLE_MSG);
-      if (INSTANCE == null) {
-         INSTANCE = (Freecam)RSM.getModule(Freecam.class);
-      }
+    private static Freecam INSTANCE;
 
-      this.freecamPos = new Pos(MinecraftClient.getInstance().gameRenderer.getCamera().getPos());
-      CameraHandler.registerProvider(this);
-      ClientRotationHandler.registerProvider(this);
-   }
+    private Pos freecamPos = new Pos();
 
-   public void onDisable() {
-      RSA.chat(DISABLE_MSG);
-   }
+    public Freecam() {
+        this.registerProperty(
+                horizontalSpeed,
+                verticalSpeed
+        );
+    }
 
-   @SubscribeEvent
-   public void onWorldLoad(Load event) {
-      this.setEnabled(false);
-   }
+    @Override
+    public void onEnable() {
+        RSA.chat(ENABLE_MSG);
+        if (INSTANCE == null) INSTANCE = RSM.getModule(Freecam.class);
+        this.freecamPos = new Pos(Minecraft.getInstance().gameRenderer.getMainCamera().getPosition());
+        CameraHandler.registerProvider(this);
+        ClientRotationHandler.registerProvider(this);
+    }
 
-   @SubscribeEvent
-   public void onRenderWorld(Start event) {
-      if (MinecraftClient.getInstance().getCameraEntity() != null) {
-         GameOptions options = MinecraftClient.getInstance().options;
-         boolean up = options.forwardKey.isPressed();
-         boolean down = options.backKey.isPressed();
-         boolean left = options.leftKey.isPressed();
-         boolean right = options.rightKey.isPressed();
-         float x = RotationUtils.calculateImpulse(up, down);
-         float y = RotationUtils.calculateImpulse(left, right);
-         Vec2f hori = Vec2f.ZERO;
-         if (x != 0.0F || y != 0.0F) {
-            hori = RotationUtils.rotateVector(y, x, -ClientRotationHandler.getClientYaw())
-               .normalize()
-               .multiply(((BigDecimal)this.horizontalSpeed.getValue()).floatValue());
-         }
+    @Override
+    public void onDisable() {
+        RSA.chat(DISABLE_MSG);
+    }
 
-         float vertical = RotationUtils.calculateImpulse(options.jumpKey.isPressed(), options.sneakKey.isPressed())
-            * ((BigDecimal)this.verticalSpeed.getValue()).floatValue();
-         this.freecamPos.selfAdd(hori.x, vertical, hori.y);
-      }
-   }
+    @SubscribeEvent
+    public void onWorldLoad(WorldEvent.Load event) {
+        setEnabled(false);
+    }
 
-   public static boolean isDetached() {
-      return INSTANCE != null && INSTANCE.isEnabled();
-   }
+    @SubscribeEvent
+    public void onRenderWorld(Render3DEvent.Start event) {
+        // Delta time smth smth
+        if (Minecraft.getInstance().getCameraEntity() == null) return;
+        Options options = Minecraft.getInstance().options;
+        boolean up = options.keyUp.isDown();
+        boolean down = options.keyDown.isDown();
+        boolean left = options.keyLeft.isDown();
+        boolean right = options.keyRight.isDown();
 
-   public boolean shouldOverridePosition() {
-      return this.isEnabled();
-   }
+        float x = RotationUtils.calculateImpulse(up, down);
+        float y = RotationUtils.calculateImpulse(left, right);
+        Vec2 hori = Vec2.ZERO;
+        if (!(x == 0 && y == 0)) {
+            // They have to be switched
+            hori = RotationUtils.rotateVector(y, x, -ClientRotationHandler.getClientYaw()).normalized().scale(horizontalSpeed.getValue().floatValue());
+        }
 
-   public boolean shouldOverrideHitPos() {
-      return false;
-   }
+        float vertical = RotationUtils.calculateImpulse(options.keyJump.isDown(), options.keyShift.isDown()) * verticalSpeed.getValue().floatValue();
 
-   public boolean shouldOverrideHitRot() {
-      return false;
-   }
+        freecamPos.selfAdd(hori.x, vertical, hori.y);
+    }
 
-   public boolean shouldBlockKeyboardMovement() {
-      return true;
-   }
+    // Forces rendering of player entity
+    // MixinGameRenderer
 
-   public Vec3d getCameraPosition() {
-      return this.freecamPos.asVec3();
-   }
+    // Stops game from culling chunks
+    // MixinVisGraph
+    public static boolean isDetached() {
+        return INSTANCE != null && INSTANCE.isEnabled();
+    }
 
-   public Vec3d getPosForHit() {
-      return null;
-   }
+    @Override
+    public boolean shouldOverridePosition() {
+        return this.isEnabled();
+    }
 
-   public Vec3d getRotForHit() {
-      return null;
-   }
+    @Override
+    public boolean shouldOverrideHitPos() {
+        return false;
+    }
 
-   public boolean isClientRotationActive() {
-      return this.isEnabled();
-   }
+    @Override
+    public boolean shouldOverrideHitRot() {
+        return false;
+    }
 
-   public boolean allowClientKeyInputs() {
-      return false;
-   }
+    @Override
+    public boolean shouldBlockKeyboardMovement() {
+        return true;
+    }
 
-   public NumberSetting getHorizontalSpeed() {
-      return this.horizontalSpeed;
-   }
+    @Override
+    public Vec3 getCameraPosition() {
+        return freecamPos.asVec3();
+    }
 
-   public NumberSetting getVerticalSpeed() {
-      return this.verticalSpeed;
-   }
+    @Override
+    public Vec3 getPosForHit() {
+        return null;
+    }
 
-   public Pos getFreecamPos() {
-      return this.freecamPos;
-   }
+    @Override
+    public Vec3 getRotForHit() {
+        return null;
+    }
+
+    @Override
+    public boolean isClientRotationActive() {
+        return this.isEnabled();
+    }
+
+    @Override
+    public boolean allowClientKeyInputs() {
+        return false;
+    }
 }
